@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useOrders, useUsers, decorateOrders } from '../hooks/useCollections';
+import { useOrders, useChannels, decorateOrders } from '../hooks/useCollections';
 import OrderCard from '../components/OrderCard';
 import BottomNav from '../components/BottomNav';
 import { IcSearch, IcPlus } from '../components/Icons';
@@ -18,11 +18,11 @@ export default function Orders() {
   const { profile, isVendor } = useAuth();
   const nav = useNavigate();
   const { data: rawOrders } = useOrders(profile);
-  const { data: users } = useUsers();
+  const { data: channels } = useChannels(profile);
   const orders = useMemo(() => decorateOrders(rawOrders), [rawOrders]);
   const [filter, setFilter] = useState('all');
 
-  const vendorName = (id) => users.find((u) => u.id === id)?.code || '';
+  const channelCode = (id) => channels.find((c) => c.id === id)?.code || '';
 
   const list = orders.filter((o) => {
     if (filter === 'all') return true;
@@ -44,7 +44,7 @@ export default function Orders() {
         </div>
         {list.length === 0 ? (
           <div className="empty"><div className="big">📦</div>No orders here</div>
-        ) : list.map((o) => <OrderCard key={o.id} order={o} vendorName={vendorName(o.vendorId)} />)}
+        ) : list.map((o) => <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} />)}
       </div>
       {!isVendor && <button className="fab" onClick={() => nav('/create')}><IcPlus size={26} /></button>}
       <BottomNav />

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useOrders, useUsers, decorateOrders } from '../hooks/useCollections';
+import { useOrders, useUsers, useChannels, decorateOrders } from '../hooks/useCollections';
 import { greeting, todayLong, initials } from '../utils/format';
 import { RoleBadge } from '../components/Badges';
 import OrderCard from '../components/OrderCard';
@@ -19,13 +19,13 @@ function DashboardHome() {
   const nav = useNavigate();
   const { data: rawOrders } = useOrders(profile);
   const { data: users } = useUsers();
+  const { data: channels } = useChannels(profile);
   const orders = useMemo(() => decorateOrders(rawOrders), [rawOrders]);
-  const vendors = users.filter((u) => u.role === 'vendor');
-  const vendorName = (id) => users.find((u) => u.id === id)?.code || '';
+  const channelCode = (id) => channels.find((c) => c.id === id)?.code || '';
   const creatorName = (id) => users.find((u) => u.id === id)?.name || 'Unknown';
 
   const [stageFilter, setStageFilter] = useState(null);
-  const [vendorFilter, setVendorFilter] = useState('all');
+  const [channelFilter, setChannelFilter] = useState('all');
 
   const counts = {
     new: orders.filter((o) => o.stage === 'new').length,
@@ -37,7 +37,7 @@ function DashboardHome() {
   const filtered = orders.filter((o) => {
     if (stageFilter === 'overdue') return o.isOverdue;
     if (stageFilter && o.stage !== stageFilter) return false;
-    if (vendorFilter !== 'all' && o.vendorId !== vendorFilter) return false;
+    if (channelFilter !== 'all' && o.channelId !== channelFilter) return false;
     return true;
   });
 
@@ -67,7 +67,7 @@ function DashboardHome() {
         </div>
 
         {counts.overdue > 0 && (
-          <div className={`card glow-red`} style={{ marginTop: 12, cursor: 'pointer' }}
+          <div className="card glow-red" style={{ marginTop: 12, cursor: 'pointer' }}
             onClick={() => setStageFilter(stageFilter === 'overdue' ? null : 'overdue')}>
             <div className="row-between">
               <div style={{ fontWeight: 800, color: 'var(--red)' }}>⚠️ {counts.overdue} overdue order{counts.overdue > 1 ? 's' : ''}</div>
@@ -77,9 +77,9 @@ function DashboardHome() {
         )}
 
         <div className="pill-row" style={{ marginTop: 16 }}>
-          <button className={`chip ${vendorFilter === 'all' ? 'chip-active' : ''}`} onClick={() => setVendorFilter('all')}>All vendors</button>
-          {vendors.map((v) => (
-            <button key={v.id} className={`chip ${vendorFilter === v.id ? 'chip-active' : ''}`} onClick={() => setVendorFilter(v.id)}>{v.code}</button>
+          <button className={`chip ${channelFilter === 'all' ? 'chip-active' : ''}`} onClick={() => setChannelFilter('all')}>All channels</button>
+          {channels.map((c) => (
+            <button key={c.id} className={`chip ${channelFilter === c.id ? 'chip-active' : ''}`} onClick={() => setChannelFilter(c.id)}>{c.code}</button>
           ))}
         </div>
 
@@ -88,7 +88,7 @@ function DashboardHome() {
           <div className="empty"><div className="big">📦</div>No orders yet</div>
         ) : (
           filtered.map((o) => (
-            <OrderCard key={o.id} order={o} vendorName={vendorName(o.vendorId)} createdByName={profile.role === 'team' ? creatorName(o.createdBy) : null} />
+            <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} createdByName={profile.role === 'team' ? creatorName(o.createdBy) : null} />
           ))
         )}
       </div>
@@ -112,17 +112,17 @@ function VendorHome() {
   const { profile } = useAuth();
   const nav = useNavigate();
   const { data: rawOrders } = useOrders(profile);
+  const { data: channels } = useChannels(profile);
   const orders = useMemo(() => decorateOrders(rawOrders), [rawOrders]);
 
   const active = orders.filter((o) => o.stage !== 'ready').length;
   const overdue = orders.filter((o) => o.isOverdue).length;
   const done = orders.filter((o) => o.stage === 'ready').length;
-  const channels = [...new Set(orders.map((o) => o.channelId).filter(Boolean))];
 
   return (
     <div className="app-shell">
       <div className="topbar">
-        <div className="avatar" style={{ width: 38, height: 38 }}>{profile.code?.replace('-', '') || initials(profile.name)}</div>
+        <div className="avatar" style={{ width: 38, height: 38, fontSize: 13 }}>{profile.code?.split('-').pop() || initials(profile.name)}</div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800 }}>{profile.code}</div>
           <div className="faint" style={{ fontSize: 12 }}>{profile.specialty || 'Karigar'}</div>
@@ -147,16 +147,17 @@ function VendorHome() {
         {channels.length === 0 ? (
           <div className="empty"><div className="big">💬</div>No channels assigned yet</div>
         ) : (
-          channels.map((cid) => {
-            const cOrders = orders.filter((o) => o.channelId === cid);
+          channels.map((c) => {
+            const cOrders = orders.filter((o) => o.channelId === c.id);
             const cOverdue = cOrders.filter((o) => o.isOverdue).length;
             return (
-              <div key={cid} className="card" style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => nav(`/channel/${cid}`)}>
-                <div className="row-between">
-                  <div style={{ fontWeight: 700 }}>💬 Channel</div>
-                  <span className="faint" style={{ fontSize: 12 }}>{cOrders.length} orders</span>
+              <div key={c.id} className="card" style={{ marginBottom: 12, cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center' }} onClick={() => nav(`/channel/${c.id}`)}>
+                <div className="avatar" style={{ fontSize: 13 }}>{c.code}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700 }}>{c.code}{c.name && c.name !== c.code ? <span className="faint" style={{ fontWeight: 500 }}> · {c.name}</span> : null}</div>
+                  <div className="faint" style={{ fontSize: 12, marginTop: 2 }}>{cOrders.length} orders</div>
                 </div>
-                {cOverdue > 0 && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 6, fontWeight: 700 }}>{cOverdue} overdue</div>}
+                {cOverdue > 0 && <span className="badge" style={{ background: '#fde8e8', color: 'var(--red)' }}>{cOverdue} overdue</span>}
               </div>
             );
           })

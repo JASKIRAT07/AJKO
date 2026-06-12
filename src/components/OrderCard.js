@@ -13,12 +13,12 @@ function stageActionLabel(stage) {
   return null;
 }
 
-export default function OrderCard({ order, vendorName, createdByName, inFeed }) {
+export default function OrderCard({ order, channelCode, createdByName, inFeed }) {
   const { profile, isVendor, isAdmin } = useAuth();
   const nav = useNavigate();
   const urg = order.urgency;
   const glow = urg?.overdue ? 'glow-red' : stageInfo(order.stage).glow;
-  const canMove = isVendor && order.vendorId === profile?.id;
+  const canMove = isVendor && order.channelId === profile?.channelId;
   const canShare = isVendor || isAdmin; // not team members
   const idx = STAGE_ORDER.indexOf(order.stage);
 
@@ -52,7 +52,7 @@ export default function OrderCard({ order, vendorName, createdByName, inFeed }) 
       <div style={{ margin: '12px 0 6px' }}><StagePipeline stage={order.stage} compact /></div>
       <div className="row-between">
         <StageBadge stage={order.stage} />
-        {vendorName && <span className="faint" style={{ fontSize: 12 }}>{vendorName}</span>}
+        {channelCode && <span className="faint" style={{ fontSize: 12 }}>{channelCode}</span>}
       </div>
 
       {createdByName && (

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useOrders, useUsers, decorateOrders } from '../hooks/useCollections';
+import { useOrders, useChannels, decorateOrders } from '../hooks/useCollections';
 import { PURITY_OPTIONS } from '../utils/format';
 import OrderCard from '../components/OrderCard';
 import { IcBack, IcSearch } from '../components/Icons';
@@ -10,30 +10,29 @@ export default function Search() {
   const { profile } = useAuth();
   const nav = useNavigate();
   const { data: rawOrders } = useOrders(profile);
-  const { data: users } = useUsers();
+  const { data: channels } = useChannels(profile);
   const orders = useMemo(() => decorateOrders(rawOrders), [rawOrders]);
-  const vendors = users.filter((u) => u.role === 'vendor');
-  const vendorName = (id) => users.find((u) => u.id === id)?.code || '';
+  const channelCode = (id) => channels.find((c) => c.id === id)?.code || '';
 
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
   const [purity, setPurity] = useState('');
   const [sample, setSample] = useState('');
-  const [vendor, setVendor] = useState('');
+  const [channel, setChannel] = useState('');
 
   const results = orders.filter((o) => {
     if (q) {
-      const hay = `${o.appOrderNo} ${o.storeOrderNo} ${o.itemName} ${vendorName(o.vendorId)}`.toLowerCase();
+      const hay = `${o.appOrderNo} ${o.storeOrderNo} ${o.itemName} ${channelCode(o.channelId)}`.toLowerCase();
       if (!hay.includes(q.toLowerCase())) return false;
     }
     if (stage && o.stage !== stage) return false;
     if (purity && o.purity !== purity) return false;
     if (sample && String(!!o.sampleTaken) !== (sample === 'yes' ? 'true' : 'false')) return false;
-    if (vendor && o.vendorId !== vendor) return false;
+    if (channel && o.channelId !== channel) return false;
     return true;
   });
 
-  const anyFilter = q || stage || purity || sample || vendor;
+  const anyFilter = q || stage || purity || sample || channel;
 
   return (
     <div className="app-shell">
@@ -52,11 +51,11 @@ export default function Search() {
           <ChipGroup label="Stage" value={stage} onChange={setStage} options={[['new', 'New'], ['inprogress', 'In progress'], ['ready', 'Ready']]} />
           <ChipGroup label="Purity" value={purity} onChange={setPurity} options={PURITY_OPTIONS.map((p) => [p, p])} />
           <ChipGroup label="Sample taken" value={sample} onChange={setSample} options={[['yes', 'Yes'], ['no', 'No']]} />
-          <ChipGroup label="Vendor" value={vendor} onChange={setVendor} options={vendors.map((v) => [v.id, v.code])} />
+          <ChipGroup label="Channel" value={channel} onChange={setChannel} options={channels.map((c) => [c.id, c.code])} />
         </div>
 
         <div className="section-title">{anyFilter ? `${results.length} result${results.length === 1 ? '' : 's'}` : 'All orders'}</div>
-        {results.map((o) => <OrderCard key={o.id} order={o} vendorName={vendorName(o.vendorId)} />)}
+        {results.map((o) => <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} />)}
         {results.length === 0 && <div className="empty"><div className="big">🔍</div>No matches</div>}
       </div>
     </div>

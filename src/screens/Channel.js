@@ -22,12 +22,13 @@ const FILTERS = [
 
 export default function Channel() {
   const { id } = useParams();
-  const { profile, isVendor } = useAuth();
+  const { profile, isVendor, isAdmin } = useAuth();
   const nav = useNavigate();
   const { data: users } = useUsers();
   const { data: messages } = useChannelMessages(id);
   const { data: rawOrders } = useOrders(profile);
   const [channel, setChannel] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   const [filter, setFilter] = useState('all');
   const [text, setText] = useState('');
   const [recording, setRecording] = useState(false);
@@ -36,14 +37,15 @@ export default function Channel() {
   const endRef = useRef(null);
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'channels', id), (s) => setChannel(s.exists() ? { id: s.id, ...s.data() } : null));
+    const unsub = onSnapshot(doc(db, 'channels', id), (s) => { setChannel(s.exists() ? { id: s.id, ...s.data() } : null); setLoaded(true); });
     return unsub;
   }, [id]);
 
   const orders = useMemo(() => decorateOrders(rawOrders.filter((o) => o.channelId === id)), [rawOrders, id]);
-  const vendor = users.find((u) => u.id === channel?.vendorId);
+  const members = users.filter((u) => channel?.memberIds?.includes(u.id));
+  const vendorMembers = members.filter((u) => u.role === 'vendor');
+  const isMember = isAdmin || channel?.memberIds?.includes(profile?.id);
 
-  // Build a chronological feed of order-cards + messages
   const feed = useMemo(() => {
     const orderItems = orders
       .filter((o) => {
@@ -53,7 +55,7 @@ export default function Channel() {
       })
       .map((o) => ({ kind: 'order', ts: o.createdAt, data: o, id: `o-${o.id}` }));
     const msgItems = messages
-      .filter((m) => m.type !== 'order') // order announcements rendered as cards
+      .filter((m) => m.type !== 'order')
       .map((m) => ({ kind: 'msg', ts: m.timestamp, data: m, id: `m-${m.id}` }));
     return [...orderItems, ...msgItems].sort((a, b) => tsVal(a.ts) - tsVal(b.ts));
   }, [orders, messages, filter]);
@@ -79,16 +81,25 @@ export default function Channel() {
     } catch { alert('Microphone permission needed.'); }
   };
 
+  if (loaded && (!channel || !isMember)) {
+    return (
+      <div className="app-shell">
+        <div className="topbar"><button className="icon-btn" onClick={() => nav(-1)}><IcBack size={18} /></button><h1 style={{ fontSize: 17 }}>Channel</h1></div>
+        <div className="empty"><div className="big">🔒</div>{!channel ? 'Channel not found.' : 'You are not a member of this channel.'}</div>
+      </div>
+    );
+  }
+
   let lastDay = null;
 
   return (
     <div className="app-shell">
       <div className="topbar">
         <button className="icon-btn" onClick={() => nav(-1)}><IcBack size={18} /></button>
-        <div className="avatar" style={{ width: 38, height: 38 }}>{vendor?.code?.replace('-', '') || '?'}</div>
+        <div className="avatar" style={{ width: 38, height: 38, fontSize: 13 }}>{channel?.code}</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>{vendor?.code || 'Channel'}</div>
-          <div className="faint" style={{ fontSize: 12 }}>{isVendor ? 'Team' : (vendor?.specialty || 'Karigar')}</div>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>{channel?.code}{channel?.name && channel.name !== channel.code ? ` · ${channel.name}` : ''}</div>
+          <div className="faint" style={{ fontSize: 12 }}>{vendorMembers.length} vendor{vendorMembers.length === 1 ? '' : 's'} · {members.length} member{members.length === 1 ? '' : 's'}</div>
         </div>
         <button className="icon-btn" onClick={() => nav('/search')}><IcSearch size={18} /></button>
         <button className="icon-btn"><IcDots size={18} /></button>
@@ -99,7 +110,7 @@ export default function Channel() {
       </div>
 
       <div className="screen" style={{ paddingTop: 12, paddingBottom: 96 }}>
-        {feed.length === 0 && <div className="empty"><div className="big">✨</div>No activity yet. Create the first order.</div>}
+        {feed.length === 0 && <div className="empty"><div className="big">✨</div>No activity yet.{!isVendor && ' Create the first order.'}</div>}
         {feed.map((item) => {
           const day = dayKey(item.ts);
           const showDivider = day && day !== lastDay;

@@ -15,7 +15,7 @@ export default function Profile() {
       <div className="topbar"><h1>Profile</h1></div>
       <div className="screen screen-pad-bottom">
         <div className="center-col" style={{ marginBottom: 20 }}>
-          <div className={`avatar lg ${isVendor ? '' : 'blue'}`}>{isVendor ? profile.code?.replace('-', '') : initials(profile.name)}</div>
+          <div className={`avatar lg ${isVendor ? '' : 'blue'}`}>{isVendor ? (profile.code?.split('-').pop() || initials(profile.name)) : initials(profile.name)}</div>
           <h2 style={{ margin: '12px 0 4px' }}>{isVendor ? profile.code : profile.name}</h2>
           <RoleBadge role={profile.role} />
           {isVendor && <div className="faint" style={{ marginTop: 6 }}>{profile.specialty || 'Karigar'}</div>}

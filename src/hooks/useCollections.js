@@ -23,30 +23,30 @@ function useLiveQuery(buildQuery, deps) {
   return { data, loading };
 }
 
-// Orders, role-scoped. Vendors only see their own; team/admin see all.
+// Orders, role-scoped. Vendors see their channel's orders; team/admin see all.
 export function useOrders(profile) {
   return useLiveQuery(() => {
     if (!profile) return null;
     const base = collection(db, 'orders');
     if (profile.role === 'vendor') {
-      return query(base, where('vendorId', '==', profile.id));
+      if (!profile.channelId) return null;
+      return query(base, where('channelId', '==', profile.channelId));
     }
     return query(base, orderBy('createdAt', 'desc'));
-  }, [profile?.id, profile?.role]);
+  }, [profile?.id, profile?.role, profile?.channelId]);
 }
 
 export function useUsers() {
   return useLiveQuery(() => query(collection(db, 'users'), orderBy('createdAt', 'desc')), []);
 }
 
+// Channels, role-scoped. Admin sees all; everyone else sees channels they belong to.
 export function useChannels(profile) {
   return useLiveQuery(() => {
     if (!profile) return null;
     const base = collection(db, 'channels');
-    if (profile.role === 'vendor') {
-      return query(base, where('vendorId', '==', profile.id));
-    }
-    return base;
+    if (profile.role === 'admin') return base;
+    return query(base, where('memberIds', 'array-contains', profile.id));
   }, [profile?.id, profile?.role]);
 }
 

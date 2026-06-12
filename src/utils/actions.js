@@ -9,14 +9,21 @@ export async function moveStage(order, direction, actor) {
   const idx = STAGE_ORDER.indexOf(order.stage);
   const nextIdx = Math.min(STAGE_ORDER.length - 1, Math.max(0, idx + direction));
   if (nextIdx === idx) return;
+  const fromStage = order.stage;
   const nextStage = STAGE_ORDER[nextIdx];
+  // Full audit entry: who, when, from → to, and direction.
+  const entry = {
+    stage: nextStage,
+    fromStage,
+    direction: direction > 0 ? 'forward' : 'back',
+    by: actor?.code || actor?.name || 'system',
+    byName: actor?.name || '',
+    byId: actor?.id || '',
+    at: Date.now(),
+  };
   await updateDoc(doc(db, 'orders', order.id), {
     stage: nextStage,
-    stageHistory: arrayUnion({
-      stage: nextStage,
-      by: actor?.code || actor?.name || 'system',
-      at: Date.now(),
-    }),
+    stageHistory: arrayUnion(entry),
   });
   // log a stage-change message in the channel
   if (order.channelId) {
@@ -25,17 +32,17 @@ export async function moveStage(order, direction, actor) {
       orderId: order.id,
       senderId: actor?.id || '',
       senderCode: actor?.code || actor?.name || '',
-      content: `${order.appOrderNo} → ${stageInfo(nextStage).label}`,
+      content: `${order.appOrderNo}: ${stageInfo(fromStage).label} → ${stageInfo(nextStage).label}`,
       type: 'stage',
       timestamp: serverTimestamp(),
     });
   }
-  // notify the order creator + vendor
+  // notify the order creator
   await notify({
     userId: order.createdBy,
     type: 'stage',
     title: 'Stage updated',
-    body: `${order.appOrderNo} moved to ${stageInfo(nextStage).label}`,
+    body: `${order.appOrderNo} moved to ${stageInfo(nextStage).label} by ${entry.by}`,
     orderId: order.id,
   });
 }
@@ -68,7 +75,15 @@ export async function createOrder(data) {
   const ref = await addDoc(collection(db, 'orders'), {
     ...data,
     stage: 'new',
-    stageHistory: [{ stage: 'new', by: data.createdByCode || 'system', at: Date.now() }],
+    stageHistory: [{
+      stage: 'new',
+      fromStage: null,
+      direction: 'create',
+      by: data.createdByCode || 'system',
+      byName: data.createdByName || '',
+      byId: data.createdBy || '',
+      at: Date.now(),
+    }],
     createdAt: serverTimestamp(),
   });
   return ref.id;
@@ -83,15 +98,23 @@ export async function fetchAllOrderNumbers() {
   return snap.docs.map((d) => d.data().appOrderNo).filter(Boolean);
 }
 
-// Ensure a channel exists for a vendor; returns its id.
-export async function ensureVendorChannel(vendor, creator) {
-  const snap = await getDocs(query(collection(db, 'channels'), where('vendorId', '==', vendor.id)));
-  if (!snap.empty) return snap.docs[0].id;
+// Admin creates a vendor channel (e.g. code "THG"). Code must be unique.
+export async function createChannel({ code, name }) {
+  const clean = String(code || '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!clean) throw new Error('Channel code is required.');
+  const dupe = await getDocs(query(collection(db, 'channels'), where('code', '==', clean)));
+  if (!dupe.empty) throw new Error(`Channel code "${clean}" already exists.`);
   const ref = await addDoc(collection(db, 'channels'), {
-    name: `${vendor.code} · ${vendor.specialty || 'Channel'}`,
-    vendorId: vendor.id,
-    memberIds: creator ? [creator.id] : [],
+    code: clean,
+    name: name?.trim() || clean,
+    memberIds: [],
     createdAt: serverTimestamp(),
   });
   return ref.id;
+}
+
+// Add a user to a channel's member list (idempotent).
+export async function addUserToChannel(channelId, userId) {
+  if (!channelId || !userId) return;
+  await updateDoc(doc(db, 'channels', channelId), { memberIds: arrayUnion(userId) });
 }

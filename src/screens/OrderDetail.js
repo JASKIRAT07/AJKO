@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { useUsers, useOrderMessages } from '../hooks/useCollections';
+import { useUsers, useChannels, useOrderMessages } from '../hooks/useCollections';
 import {
   getUrgency, formatDate, formatDateTime, whatsappUrl, stageInfo,
 } from '../utils/format';
@@ -18,6 +18,7 @@ export default function OrderDetail() {
   const { profile, isVendor, isAdmin, isTeam } = useAuth();
   const nav = useNavigate();
   const { data: users } = useUsers();
+  const { data: channels } = useChannels(profile);
   const [order, setOrder] = useState(null);
   const { data: messages } = useOrderMessages(id);
   const [text, setText] = useState('');
@@ -30,9 +31,10 @@ export default function OrderDetail() {
   const urgency = useMemo(() => order && getUrgency(order.dueDate, order.stage), [order]);
   if (!order) return <div className="full-center"><div className="spinner" /></div>;
 
-  const vendor = users.find((u) => u.id === order.vendorId);
+  const channel = channels.find((c) => c.id === order.channelId);
+  const vendorMembers = users.filter((u) => u.role === 'vendor' && u.channelId === order.channelId);
   const creator = users.find((u) => u.id === order.createdBy);
-  const canMove = isVendor && order.vendorId === profile?.id;
+  const canMove = isVendor && order.channelId === profile?.channelId;
   const canShare = isAdmin || isVendor; // not team members
   const sendText = async () => { if (!text.trim()) return; await sendMessage({ channelId: order.channelId, orderId: id, sender: profile, content: text }); setText(''); };
 
@@ -93,23 +95,39 @@ export default function OrderDetail() {
           <audio src={order.voiceNote} controls style={{ width: '100%' }} />
         </>)}
 
-        {!isVendor && vendor && (<>
-          <div className="section-title">Assigned vendor</div>
+        {!isVendor && channel && (<>
+          <div className="section-title">Assigned channel</div>
           <div className="card card-tight" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div className="avatar">{vendor.code?.replace('-', '')}</div>
-            <div><div style={{ fontWeight: 700 }}>{vendor.code}</div><div className="faint" style={{ fontSize: 12 }}>{vendor.specialty || 'Karigar'}</div></div>
+            <div className="avatar" style={{ fontSize: 13 }}>{channel.code}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700 }}>{channel.code}{channel.name && channel.name !== channel.code ? ` · ${channel.name}` : ''}</div>
+              <div className="faint" style={{ fontSize: 12 }}>{vendorMembers.length ? vendorMembers.map((v) => v.code).join(', ') : 'No vendors yet'}</div>
+            </div>
+            <button className="link" onClick={() => nav(`/channel/${channel.id}`)}>Open</button>
           </div>
         </>)}
 
         {!isVendor && creator && <div className="faint" style={{ fontSize: 12, marginTop: 12 }}>Created by {creator.name} · {formatDateTime(order.createdAt)}</div>}
 
         {order.stageHistory?.length > 0 && (<>
-          <div className="section-title">Stage history</div>
+          <div className="section-title">Audit log</div>
           <div className="card card-tight">
-            {order.stageHistory.map((h, i) => (
-              <div key={i} className="row-between" style={{ padding: '4px 0' }}>
-                <span style={{ color: stageInfo(h.stage).color, fontWeight: 700, fontSize: 13 }}>{stageInfo(h.stage).label}</span>
-                <span className="faint" style={{ fontSize: 12 }}>{h.by} · {formatDateTime(h.at)}</span>
+            {[...order.stageHistory].reverse().map((h, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: i < order.stageHistory.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                <span className="dot" style={{ background: stageInfo(h.stage).color, marginTop: 6 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>
+                    {h.direction === 'create'
+                      ? <>Order created — <span style={{ color: stageInfo(h.stage).color }}>{stageInfo(h.stage).label}</span></>
+                      : <>
+                          {h.fromStage ? `${stageInfo(h.fromStage).label} ` : ''}→ <span style={{ color: stageInfo(h.stage).color }}>{stageInfo(h.stage).label}</span>
+                          {h.direction === 'back' ? ' (moved back)' : ''}
+                        </>}
+                  </div>
+                  <div className="faint" style={{ fontSize: 12, marginTop: 2 }}>
+                    by {h.byName ? `${h.byName} (${h.by})` : h.by} · {formatDateTime(h.at)}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -136,7 +154,7 @@ export default function OrderDetail() {
 
       <div className="input-bar" style={{ gap: 10, padding: '12px 16px max(12px, env(safe-area-inset-bottom))' }}>
         {!isVendor && <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => nav(`/edit/${id}`)}>Edit order</button>}
-        {canShare && <a className="btn btn-wa" style={{ flex: 1 }} href={whatsappUrl(order, vendor?.phone)} target="_blank" rel="noreferrer"><IcWhatsApp size={18} /> WhatsApp share</a>}
+        {canShare && <a className="btn btn-wa" style={{ flex: 1 }} href={whatsappUrl(order)} target="_blank" rel="noreferrer"><IcWhatsApp size={18} /> WhatsApp share</a>}
         {isTeam && <div style={{ flex: 1 }} />}
       </div>
     </div>

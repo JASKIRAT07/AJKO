@@ -115,7 +115,10 @@ exports.scheduledReminders = onSchedule('every 60 minutes', async () => {
     const dueMs = toMillis(o.dueDate);
     const createdMs = toMillis(o.createdAt) || now;
     const lastStageMs = lastStageUpdate(o) || createdMs;
-    const vendor = users.find((u) => u.id === o.vendorId);
+    // Orders target a channel; the assigned vendors are that channel's members.
+    const vendorIds = users
+      .filter((u) => u.role === 'vendor' && u.channelId === o.channelId && u.isActive !== false)
+      .map((u) => u.id);
     const storeFor = (type) => storeRecipients(storeUsers, type);
 
     const due = (type, interval) => now - (reminders[type] || 0) >= interval;
@@ -136,17 +139,17 @@ exports.scheduledReminders = onSchedule('every 60 minutes', async () => {
     } else {
       // overdue
       if (dueMs && dueMs < startOfTodayMs(now) && due('overdue', INTERVAL.overdue)) {
-        await fire('overdue', [...storeFor('overdue'), o.vendorId], 'Order overdue',
+        await fire('overdue', [...storeFor('overdue'), ...vendorIds], 'Order overdue',
           `${o.appOrderNo} · ${o.itemName} is past its due date.`);
       } else if (dueMs && isToday(dueMs, now) && due('dueToday', INTERVAL.dueToday)) {
         // due today
-        await fire('dueToday', [...storeFor('due'), o.vendorId], 'Due today',
+        await fire('dueToday', [...storeFor('due'), ...vendorIds], 'Due today',
           `${o.appOrderNo} · ${o.itemName} is due today.`);
       }
 
       // new order not acknowledged by vendor
       if (o.stage === 'new' && now - createdMs >= INTERVAL.newAckFirst && due('newAck', INTERVAL.newAck)) {
-        await fire('newAck', [o.vendorId], 'Order awaiting acknowledgement',
+        await fire('newAck', vendorIds, 'Order awaiting acknowledgement',
           `${o.appOrderNo} · ${o.itemName} hasn't been started yet.`);
       }
 

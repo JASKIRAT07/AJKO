@@ -14,7 +14,7 @@ import {
   updatePassword,
 } from 'firebase/auth';
 import {
-  collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp,
+  collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp, arrayUnion,
 } from 'firebase/firestore';
 import { auth, db, createRecaptcha } from '../firebase';
 
@@ -96,20 +96,26 @@ export async function resetPasswordAfterOtp(newPassword) {
 }
 
 // Admin: create a member record (no auth account yet; created on first login).
-export async function createMemberRecord({ name, phone, email, role, code, specialty, assignedChannels = [] }) {
-  return addDoc(collection(db, 'users'), {
+// Vendors must be linked to a channel; they are added to that channel's memberIds.
+export async function createMemberRecord({ name, phone, email, role, code, specialty, channelId = null }) {
+  const ref = await addDoc(collection(db, 'users'), {
     name,
     phone: normalizePhone(phone),
     email: email ? email.toLowerCase() : loginIdToEmail(phone),
     role,
     code,
     specialty: specialty || '',
-    assignedChannels,
+    channelId: role === 'vendor' ? channelId : null,
+    assignedChannels: channelId ? [channelId] : [],
     isActive: true,
     passwordSet: false,
     authUid: null,
     createdAt: serverTimestamp(),
   });
+  if (role === 'vendor' && channelId) {
+    await updateDoc(doc(db, 'channels', channelId), { memberIds: arrayUnion(ref.id) });
+  }
+  return ref;
 }
 
 // One-time bootstrap for the very first admin (used when the users collection is empty).
@@ -133,13 +139,21 @@ export async function bootstrapFirstAdmin({ name, email, password }) {
   });
 }
 
-// Generate the next member code, e.g. V-03 or TM-02
-export function nextMemberCode(role, existingCodes = []) {
-  const prefix = role === 'vendor' ? 'V' : 'TM';
+function nextSeqCode(prefix, existingCodes = []) {
   let max = 0;
   existingCodes.forEach((c) => {
     const m = new RegExp(`^${prefix}-(\\d+)$`).exec(c || '');
     if (m) max = Math.max(max, parseInt(m[1], 10));
   });
   return `${prefix}-${String(max + 1).padStart(2, '0')}`;
+}
+
+// Vendor codes derive from their channel code, e.g. THG-01, THG-02.
+export function nextVendorCode(channelCode, existingCodes = []) {
+  return nextSeqCode(channelCode, existingCodes);
+}
+
+// Team codes are store-wide, e.g. TM-01.
+export function nextTeamCode(existingCodes = []) {
+  return nextSeqCode('TM', existingCodes);
 }

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { useUsers } from '../hooks/useCollections';
+import { useUsers, useChannels } from '../hooks/useCollections';
 import {
   PURITY_OPTIONS, LOOK_OPTIONS, nextAppOrderNo, whatsappMessage, countdownLabel,
 } from '../utils/format';
 import {
-  createOrder, updateOrder, fetchAllOrderNumbers, ensureVendorChannel, notify, sendMessage,
+  createOrder, updateOrder, fetchAllOrderNumbers, addUserToChannel, notify, sendMessage,
 } from '../utils/actions';
 import { uploadFile, uploadBlob } from '../utils/upload';
 import { IcBack, IcImage } from '../components/Icons';
@@ -17,7 +17,7 @@ import VoiceRecorder from '../components/VoiceRecorder';
 const blank = {
   storeOrderNo: '', itemName: '', weight: '', purity: '', look: '',
   size: '', width: '', pieces: '', designDetails: '', extraDetails: '',
-  sampleTaken: false, dueDate: '', vendorId: '',
+  sampleTaken: false, dueDate: '', channelId: '',
 };
 
 export default function CreateOrder() {
@@ -25,14 +25,15 @@ export default function CreateOrder() {
   const editing = Boolean(id);
   const { profile } = useAuth();
   const nav = useNavigate();
+  const [params] = useSearchParams();
   const { data: users } = useUsers();
-  const vendors = users.filter((u) => u.role === 'vendor' && u.isActive !== false);
+  const { data: channels } = useChannels(profile);
 
-  const [form, setForm] = useState(blank);
+  const [form, setForm] = useState({ ...blank, channelId: params.get('channel') || '' });
   const [appOrderNo, setAppOrderNo] = useState('#APP-…');
   const [customPurity, setCustomPurity] = useState(false);
   const [customLook, setCustomLook] = useState(false);
-  const [images, setImages] = useState([]); // {url,type} or File-derived previews
+  const [images, setImages] = useState([]);
   const [voiceBlob, setVoiceBlob] = useState(null);
   const [voiceUrl, setVoiceUrl] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -56,27 +57,22 @@ export default function CreateOrder() {
   }, [editing, id]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
   const preview = useMemo(() => whatsappMessage({ ...form, appOrderNo, images }), [form, appOrderNo, images]);
-
-  const valid = form.storeOrderNo && form.itemName && form.weight && form.purity && form.look && form.dueDate && form.vendorId;
+  const valid = form.storeOrderNo && form.itemName && form.weight && form.purity && form.look && form.dueDate && form.channelId;
 
   const onPickFiles = async (e) => {
     const files = Array.from(e.target.files || []).slice(0, 4 - images.length);
     for (const f of files) {
-      // optimistic local preview
       const localUrl = URL.createObjectURL(f);
       setImages((prev) => [...prev, { url: localUrl, type: f.type?.startsWith('video') ? 'video' : 'image', _file: f }]);
     }
   };
-
   const removeImage = (i) => setImages((prev) => prev.filter((_, idx) => idx !== i));
 
   const save = async (asDraft) => {
     if (!asDraft && !valid) return;
     setBusy(true);
     try {
-      // upload any local files
       const uploaded = [];
       for (const im of images) {
         if (im._file) uploaded.push(await uploadFile(im._file));
@@ -85,8 +81,7 @@ export default function CreateOrder() {
       let voiceNote = voiceUrl;
       if (voiceBlob) voiceNote = await uploadBlob(voiceBlob);
 
-      const vendor = vendors.find((v) => v.id === form.vendorId);
-      const channelId = vendor ? await ensureVendorChannel(vendor, profile) : null;
+      const channelId = form.channelId;
 
       const payload = {
         storeOrderNo: form.storeOrderNo,
@@ -102,8 +97,8 @@ export default function CreateOrder() {
         extraDetails: form.extraDetails,
         sampleTaken: form.sampleTaken,
         dueDate: form.dueDate ? new Date(form.dueDate) : null,
-        vendorId: form.vendorId,
         channelId,
+        vendorId: null,
         images: uploaded,
         voiceNote: voiceNote || null,
         isDraft: !!asDraft,
@@ -117,13 +112,15 @@ export default function CreateOrder() {
           ...payload,
           createdBy: profile.id,
           createdByCode: profile.code || profile.name,
+          createdByName: profile.name,
         });
+        // creator joins the channel so they can keep chatting in it
+        await addUserToChannel(channelId, profile.id);
         if (!asDraft && channelId) {
-          await sendMessage({
-            channelId, orderId: newId, sender: profile,
-            content: `New order ${appOrderNo} — ${form.itemName}`, type: 'order',
-          });
-          if (vendor) await notify({ userId: vendor.id, type: 'new', title: 'New order assigned', body: `${appOrderNo} · ${form.itemName}`, orderId: newId });
+          await sendMessage({ channelId, orderId: newId, sender: profile, content: `New order ${appOrderNo} — ${form.itemName}`, type: 'order' });
+          // notify every vendor member of this channel
+          const vendorMembers = users.filter((u) => u.role === 'vendor' && u.channelId === channelId);
+          await Promise.all(vendorMembers.map((v) => notify({ userId: v.id, type: 'new', title: 'New order assigned', body: `${appOrderNo} · ${form.itemName}`, orderId: newId })));
         }
         nav(channelId && !asDraft ? `/channel/${channelId}` : '/');
       }
@@ -134,6 +131,8 @@ export default function CreateOrder() {
     }
   };
 
+  const noChannels = channels.length === 0;
+
   return (
     <div className="app-shell">
       <div className="topbar">
@@ -143,6 +142,14 @@ export default function CreateOrder() {
       </div>
 
       <div className="screen" style={{ paddingBottom: 110 }}>
+        {noChannels && (
+          <div className="card glow-orange" style={{ marginBottom: 14 }}>
+            <div style={{ fontWeight: 700 }}>No channels yet</div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Create a vendor channel first, then add vendors to it.</div>
+            <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={() => nav('/members')}>Go to Members</button>
+          </div>
+        )}
+
         <div className="row-2">
           <div className="field"><label>Store order no. <span className="req">*</span></label>
             <input className="input" value={form.storeOrderNo} onChange={(e) => set('storeOrderNo', e.target.value)} placeholder="e.g. 4821" /></div>
@@ -178,10 +185,10 @@ export default function CreateOrder() {
           {form.dueDate && <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>{countdownLabel(new Date(form.dueDate))}</div>}
         </div>
 
-        <div className="field"><label>Assign to vendor <span className="req">*</span></label>
-          <select className="select" value={form.vendorId} onChange={(e) => set('vendorId', e.target.value)}>
-            <option value="">Select vendor…</option>
-            {vendors.map((v) => <option key={v.id} value={v.id}>{v.code} · {v.specialty || 'Karigar'}</option>)}
+        <div className="field"><label>Assign to channel <span className="req">*</span></label>
+          <select className="select" value={form.channelId} onChange={(e) => set('channelId', e.target.value)}>
+            <option value="">Select channel…</option>
+            {channels.map((c) => <option key={c.id} value={c.id}>{c.code}{c.name && c.name !== c.code ? ` · ${c.name}` : ''}</option>)}
           </select>
         </div>
 
@@ -226,7 +233,7 @@ export default function CreateOrder() {
       <div className="input-bar" style={{ gap: 10, padding: '12px 16px max(12px, env(safe-area-inset-bottom))' }}>
         <button className="btn btn-ghost" style={{ flex: '0 0 auto' }} onClick={() => nav(-1)}>Cancel</button>
         <button className="btn btn-primary" style={{ flex: 1 }} disabled={busy || !valid} onClick={() => save(false)}>
-          {busy ? 'Saving…' : editing ? 'Save changes' : 'Create & send to vendor'}
+          {busy ? 'Saving…' : editing ? 'Save changes' : 'Create & send to channel'}
         </button>
       </div>
     </div>
