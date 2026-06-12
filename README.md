@@ -1,70 +1,75 @@
-# Getting Started with Create React App
+# AJKO
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A mobile-first **React PWA** for a retail jewelry store — private vendor & team
+communication plus order management. Built with Create React App, Firebase
+(Auth, Firestore, Storage, Cloud Messaging) and React Router.
 
-## Available Scripts
+## Roles
 
-In the project directory, you can run:
+| Role | Sees | Can do |
+| --- | --- | --- |
+| **Admin** | Everything — all channels, orders, members | Create orders, manage members/vendors, settings, WhatsApp share, move stages |
+| **Team member** | Same dashboard as admin | Create orders, chat in channels, track stages (no member mgmt, no settings, no WhatsApp on detail) |
+| **Vendor** | Only their 1–2 channels (peers shown as codes, e.g. `V-01`) | Move their own order stages forward/back, chat, WhatsApp-forward to karigar |
 
-### `npm start`
+## Order model
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- **Stages:** New (gray/orange) → In progress (blue) → Ready (green), shown as a pulsing pipeline.
+- **Urgency** (layered on top): Overdue (red), Due today, Due in 1/2/3 days, On track.
+- Cards glow + pulse in their stage/urgency color; overdue cards get a red border + glow.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Run locally
 
-### `npm test`
+```bash
+npm install
+npm start          # dev server at http://localhost:3000
+npm run build      # production build into /build
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## First run
 
-### `npm run build`
+Nobody can self-register — the admin creates everyone. To create the very first
+admin, open the app → **Set up first admin** (only works while the `users`
+collection is empty). After that:
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+1. Admin → **Members** → add vendors / team members (generates `V-01`, `TM-01` …).
+2. Each new member opens the app → **First time setup** → enters their phone →
+   receives an OTP → sets a password. Future logins use phone/email + password.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Firebase Console setup required
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+The code is wired up, but these must be enabled in the Firebase Console:
 
-### `npm run eject`
+1. **Authentication → Sign-in methods:** enable **Email/Password** and **Phone**.
+   - Phone Auth (OTP/SMS) requires the **Blaze** plan beyond the free quota and a
+     reCAPTCHA; add your domain under **Authentication → Settings → Authorized domains**.
+2. **Firestore:** create the database and paste `firestore.rules` (Rules tab).
+   Collections used: `users`, `channels`, `orders`, `messages`, `notifications`.
+3. **Storage:** enable Cloud Storage (order images/videos + voice notes).
+4. **Cloud Messaging (push):** generate a **Web Push certificate (VAPID key)** under
+   Project settings → Cloud Messaging, then paste it into `VAPID_KEY` in
+   `src/firebase.js`. Stage-change / new-order / due-date triggers are best sent
+   from a Cloud Function (Admin SDK) reading each user's `fcmTokens`.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## PWA
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+`public/manifest.json` (standalone, theme `#ff6b35`, bg `#faf7f4`), an offline
+app-shell worker (`public/service-worker.js`), and the FCM background worker
+(`public/firebase-messaging-sw.js`). Installable on iPhone (Add to Home Screen)
+and Android.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Project structure
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+```
+src/
+  firebase.js                 Firebase init (app, auth, db, storage, VAPID)
+  App.js                      Router + role-based route guards
+  context/AuthContext.js      Auth state + live profile (matched by authUid)
+  hooks/useCollections.js     Real-time Firestore listeners (role-scoped)
+  utils/                      format, auth, actions (writes), upload
+  components/                 OrderCard, StagePipeline, Badges, BottomNav, Icons…
+  screens/                    Login, Home, Orders, OrderDetail, CreateOrder,
+                              Channels, Channel, Notifications, Search,
+                              Profile, Settings, Members
+  styles/theme.css            Design system (colors, glows, pulses, layout)
+```

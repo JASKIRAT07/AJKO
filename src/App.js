@@ -1,25 +1,77 @@
-import logo from './logo.svg';
-import './App.css';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Login from './screens/Login';
+import Home from './screens/Home';
+import Orders from './screens/Orders';
+import OrderDetail from './screens/OrderDetail';
+import CreateOrder from './screens/CreateOrder';
+import Channels from './screens/Channels';
+import Channel from './screens/Channel';
+import Notifications from './screens/Notifications';
+import Search from './screens/Search';
+import Profile from './screens/Profile';
+import Settings from './screens/Settings';
+import Members from './screens/Members';
 
-function App() {
+function Shell() {
+  const { fbUser, profile, loading } = useAuth();
+
+  if (loading) return <div className="full-center"><div className="spinner" /></div>;
+  if (!fbUser) return <Login />;
+
+  // Authenticated but no profile record (e.g. mid-setup or removed)
+  if (!profile) {
+    return (
+      <div className="full-center" style={{ flexDirection: 'column', padding: 24, textAlign: 'center' }}>
+        <div className="logo-mark" style={{ marginBottom: 16 }}>💎</div>
+        <h2>Almost there</h2>
+        <p className="muted">Your account isn’t linked yet. Finish first-time setup or contact your admin.</p>
+        <SignOutLink />
+      </div>
+    );
+  }
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/orders" element={<Orders />} />
+      <Route path="/order/:id" element={<OrderDetail />} />
+      <Route path="/search" element={<Search />} />
+      <Route path="/notifications" element={<Notifications />} />
+      <Route path="/profile" element={<Profile />} />
+      <Route path="/channels" element={<Channels />} />
+      <Route path="/channel/:id" element={<Channel />} />
+
+      {/* Admin + team only */}
+      <Route path="/create" element={<RequireRole roles={['admin', 'team']}><CreateOrder /></RequireRole>} />
+      <Route path="/edit/:id" element={<RequireRole roles={['admin', 'team']}><CreateOrder /></RequireRole>} />
+
+      {/* Admin only */}
+      <Route path="/members" element={<RequireRole roles={['admin']}><Members /></RequireRole>} />
+      <Route path="/settings" element={<RequireRole roles={['admin']}><Settings /></RequireRole>} />
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
-export default App;
+function RequireRole({ roles, children }) {
+  const { role } = useAuth();
+  if (!roles.includes(role)) return <Navigate to="/" replace />;
+  return children;
+}
+
+function SignOutLink() {
+  const { logout } = useAuth();
+  return <button className="btn btn-ghost" style={{ marginTop: 16 }} onClick={logout}>Sign out</button>;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Shell />
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
