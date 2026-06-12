@@ -105,8 +105,8 @@ export default function Login() {
           ) : mode === MODES.SIGNIN ? (
             <>
               <div className="field">
-                <label>Phone or email</label>
-                <input className="input" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="98765 43210 or you@store.com" />
+                <label>Phone number</label>
+                <input className="input" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="98765 43210" />
               </div>
               <div className="field">
                 <label>Password</label>
