@@ -23,7 +23,7 @@ export const storage = getStorage(app);
 
 // FCM web push needs a VAPID key from Firebase Console → Project settings →
 // Cloud Messaging → Web Push certificates. Paste it here to enable push.
-export const VAPID_KEY = '';
+export const VAPID_KEY = 'BOzBG4J7rarSE7VG0ZGRduXQK4Vf7NzqO0ob-OLhbVRQzOe6uPQWv1DEQCG5Vz2pvAKN7VWx_accIf-KEvabPqA';
 
 // Helper to (re)build an invisible reCAPTCHA verifier for Phone Auth.
 export function createRecaptcha(containerId = 'recaptcha-container') {
