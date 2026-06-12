@@ -1,18 +1,32 @@
 import { STAGE_ORDER, STAGES } from '../utils/format';
 
 export default function StagePipeline({ stage, compact }) {
-  const currentIdx = STAGE_ORDER.indexOf(stage);
+  const isRework = stage === 'rework';
+  const effective = isRework ? 'inprogress' : stage;
+  const currentIdx = STAGE_ORDER.indexOf(effective);
+  const last = STAGE_ORDER.length - 1;
+
   return (
     <div className="pipeline">
       {STAGE_ORDER.map((s, i) => {
-        const active = i <= currentIdx;
+        const reached = i <= currentIdx;
+        const isCurrent = i === currentIdx;
+        const color = isRework && isCurrent ? STAGES.rework.color : STAGES[s].color;
+        const label = isRework && isCurrent ? STAGES.rework.label : STAGES[s].label;
         return (
-          <div className="pipe-step" key={s} style={{ flex: i === STAGE_ORDER.length - 1 ? '0 0 auto' : 1 }}>
+          <div className="pipe-step" key={s} style={{ flex: i === last ? '0 0 auto' : 1 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <span className={`pipe-dot ${i === currentIdx ? 'active' : active ? 'active' : ''} s-${s}`} />
-              {!compact && <span className="pipe-label" style={i === currentIdx ? { color: STAGES[s].color, fontWeight: 800 } : {}}>{STAGES[s].label}</span>}
+              <span
+                className={`pipe-dot ${isCurrent ? 'live' : ''}`}
+                style={{ background: reached ? color : '#e5e1dc', '--c': `${color}66` }}
+              />
+              {!compact && (
+                <span className="pipe-label" style={isCurrent ? { color, fontWeight: 800 } : {}}>{label}</span>
+              )}
             </div>
-            {i < STAGE_ORDER.length - 1 && <span className={`pipe-line ${i < currentIdx ? 'done' : ''}`} />}
+            {i < last && (
+              <span className="pipe-line" style={{ background: i < currentIdx ? STAGES.ready.color : '#e5e1dc' }} />
+            )}
           </div>
         );
       })}

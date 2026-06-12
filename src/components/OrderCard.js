@@ -1,26 +1,25 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { stageInfo, countdownLabel, whatsappUrl, formatDateTime, STAGE_ORDER } from '../utils/format';
-import { moveStage } from '../utils/actions';
+import {
+  stageInfo, countdownLabel, whatsappUrl, formatDateTime, allowedTransitions,
+} from '../utils/format';
+import { setStage } from '../utils/actions';
 import { StageBadge, UrgencyBadge } from './Badges';
 import StagePipeline from './StagePipeline';
 import MediaStrip from './MediaStrip';
 import { IcWhatsApp } from './Icons';
-
-function stageActionLabel(stage) {
-  if (stage === 'new') return 'Start work';
-  if (stage === 'inprogress') return 'Mark ready';
-  return null;
-}
 
 export default function OrderCard({ order, channelCode, createdByName, inFeed }) {
   const { profile, isVendor, isAdmin } = useAuth();
   const nav = useNavigate();
   const urg = order.urgency;
   const glow = urg?.overdue ? 'glow-red' : stageInfo(order.stage).glow;
-  const canMove = isVendor && order.channelId === profile?.channelId;
+  const ownChannel = order.channelId === profile?.channelId;
+  const canMove = isVendor && ownChannel;
   const canShare = isVendor || isAdmin; // not team members
-  const idx = STAGE_ORDER.indexOf(order.stage);
+  const transitions = canMove ? allowedTransitions(order.stage, 'vendor') : [];
+  const primary = transitions.find((t) => t.kind === 'primary');
+  const secondary = transitions.filter((t) => t.kind !== 'primary');
 
   const go = () => nav(`/order/${order.id}`);
 
@@ -61,23 +60,21 @@ export default function OrderCard({ order, channelCode, createdByName, inFeed })
         </div>
       )}
 
-      {(canMove || canShare) && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          {canMove && idx > 0 && (
-            <button className="btn btn-ghost" style={{ flex: '0 0 auto', padding: '10px 12px' }}
-              onClick={(e) => { e.stopPropagation(); moveStage(order, -1, profile); }}>↩︎ Move back</button>
-          )}
-          {canMove && stageActionLabel(order.stage) && (
-            <button className="btn btn-primary" style={{ flex: 1 }}
-              onClick={(e) => { e.stopPropagation(); moveStage(order, 1, profile); }}>
-              {stageActionLabel(order.stage)}
-            </button>
+      {(transitions.length > 0 || canShare) && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+          {secondary.map((t) => (
+            <button key={t.to} className="btn btn-ghost" style={{ flex: '0 0 auto', padding: '10px 12px' }}
+              onClick={(e) => { e.stopPropagation(); setStage(order, t.to, profile); }}>{t.label}</button>
+          ))}
+          {primary && (
+            <button className="btn btn-primary" style={{ flex: 1, minWidth: 120 }}
+              onClick={(e) => { e.stopPropagation(); setStage(order, primary.to, profile); }}>{primary.label}</button>
           )}
           {canShare && (
-            <a className="btn btn-wa" style={{ flex: canMove ? '0 0 auto' : 1 }}
+            <a className="btn btn-wa" style={{ flex: primary ? '0 0 auto' : 1 }}
               href={whatsappUrl(order)} target="_blank" rel="noreferrer"
               onClick={(e) => e.stopPropagation()}>
-              <IcWhatsApp size={18} /> {canMove ? '' : 'Share'}
+              <IcWhatsApp size={18} /> {primary ? '' : 'Share'}
             </a>
           )}
         </div>

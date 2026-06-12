@@ -10,7 +10,9 @@ const FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'new', label: 'New' },
   { key: 'inprogress', label: 'In progress' },
+  { key: 'rework', label: 'Rework' },
   { key: 'ready', label: 'Ready' },
+  { key: 'handedover', label: 'Handed over' },
   { key: 'overdue', label: 'Overdue' },
 ];
 

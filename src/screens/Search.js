@@ -48,7 +48,7 @@ export default function Search() {
 
         <div className="section-title">Filters</div>
         <div className="stack" style={{ gap: 10 }}>
-          <ChipGroup label="Stage" value={stage} onChange={setStage} options={[['new', 'New'], ['inprogress', 'In progress'], ['ready', 'Ready']]} />
+          <ChipGroup label="Stage" value={stage} onChange={setStage} options={[['new', 'New'], ['inprogress', 'In progress'], ['rework', 'Rework'], ['ready', 'Ready'], ['handedover', 'Handed over']]} />
           <ChipGroup label="Purity" value={purity} onChange={setPurity} options={PURITY_OPTIONS.map((p) => [p, p])} />
           <ChipGroup label="Sample taken" value={sample} onChange={setSample} options={[['yes', 'Yes'], ['no', 'No']]} />
           <ChipGroup label="Channel" value={channel} onChange={setChannel} options={channels.map((c) => [c.id, c.code])} />

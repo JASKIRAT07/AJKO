@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { updatePassword } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { initials } from '../utils/format';
 import { RoleBadge } from '../components/Badges';
@@ -29,6 +30,7 @@ export default function Profile() {
           <InfoRow k="Code" v={profile.code} />
         </div>
 
+        <EditProfile profile={profile} isVendor={isVendor} />
         <ChangePassword />
 
         <div className="card" style={{ marginBottom: 12 }}>
@@ -42,6 +44,37 @@ export default function Profile() {
         <button className="btn btn-danger btn-block" onClick={logout}>Sign out</button>
       </div>
       <BottomNav />
+    </div>
+  );
+}
+
+function EditProfile({ profile, isVendor }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(profile.name || '');
+  const [phone, setPhone] = useState(profile.phone || '');
+  const [specialty, setSpecialty] = useState(profile.specialty || '');
+  const [msg, setMsg] = useState('');
+  const save = async () => {
+    setMsg('');
+    try {
+      await updateDoc(doc(db, 'users', profile.id), { name, phone, specialty });
+      setMsg('✓ Profile updated');
+    } catch (e) { setMsg(e.message || 'Failed'); }
+  };
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="row-between" onClick={() => setOpen((o) => !o)} style={{ cursor: 'pointer' }}>
+        <span style={{ fontWeight: 600 }}>✏️ Edit profile</span><span className="faint">{open ? '▾' : '›'}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          <div className="field"><label>Name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="field"><label>Phone</label><input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+          <div className="field" style={{ marginBottom: 8 }}><label>{isVendor ? 'Specialty' : 'Designation'}</label><input className="input" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></div>
+          <button className="btn btn-primary btn-block" disabled={!name} onClick={save}>Save changes</button>
+          {msg && <p style={{ fontSize: 13, marginBottom: 0, color: msg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{msg}</p>}
+        </div>
+      )}
     </div>
   );
 }

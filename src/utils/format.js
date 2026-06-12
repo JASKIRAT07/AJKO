@@ -4,9 +4,42 @@ export const STAGES = {
   new: { key: 'new', label: 'New', color: '#9ca3af', glow: 'glow-new' },
   inprogress: { key: 'inprogress', label: 'In progress', color: '#3b82f6', glow: 'glow-blue' },
   ready: { key: 'ready', label: 'Ready', color: '#22c55e', glow: 'glow-green' },
+  handedover: { key: 'handedover', label: 'Handed over', color: '#14b8a6', glow: 'glow-teal' },
+  rework: { key: 'rework', label: 'Rework', color: '#f59e0b', glow: 'glow-amber' },
 };
 
-export const STAGE_ORDER = ['new', 'inprogress', 'ready'];
+// Linear pipeline (rework is an off-path detour, handled separately).
+export const STAGE_ORDER = ['new', 'inprogress', 'ready', 'handedover'];
+
+// Allowed stage moves per current stage, scoped by role.
+export const STAGE_TRANSITIONS = {
+  new: [
+    { to: 'inprogress', label: 'Start work', kind: 'primary', roles: ['vendor', 'team', 'admin'] },
+  ],
+  inprogress: [
+    { to: 'ready', label: 'Mark ready', kind: 'primary', roles: ['vendor', 'team', 'admin'] },
+    { to: 'new', label: 'Move back', kind: 'ghost', roles: ['vendor', 'team', 'admin'] },
+  ],
+  ready: [
+    { to: 'handedover', label: 'Hand over', kind: 'primary', roles: ['team', 'admin'] },
+    { to: 'rework', label: 'Send for rework', kind: 'danger', roles: ['team', 'admin'] },
+    { to: 'inprogress', label: 'Move back', kind: 'ghost', roles: ['vendor', 'team', 'admin'] },
+  ],
+  rework: [
+    { to: 'inprogress', label: 'Resume work', kind: 'primary', roles: ['vendor', 'team', 'admin'] },
+  ],
+  handedover: [
+    { to: 'ready', label: 'Move back', kind: 'ghost', roles: ['team', 'admin'] },
+  ],
+};
+
+export function allowedTransitions(stage, role) {
+  return (STAGE_TRANSITIONS[stage] || []).filter((t) => t.roles.includes(role));
+}
+
+// Stages that count as "finished" (no urgency pressure).
+export const DONE_STAGES = ['ready', 'handedover'];
+export const isDone = (stage) => DONE_STAGES.includes(stage);
 
 export const PURITY_OPTIONS = ['9kt', '10kt', '14kt', '18kt', '20kt', '22kt', '24kt'];
 export const LOOK_OPTIONS = ['Antique', 'Golden', 'Patiala antique', 'Goldenish antique'];
@@ -17,8 +50,8 @@ export function stageInfo(stage) {
 
 // Returns urgency descriptor based on dueDate + stage.
 export function getUrgency(dueDate, stage) {
-  if (stage === 'ready') {
-    return { key: 'done', label: 'Ready', color: '#22c55e', glow: 'glow-green', overdue: false };
+  if (isDone(stage)) {
+    return { key: 'done', label: stageInfo(stage).label, color: stageInfo(stage).color, glow: '', overdue: false };
   }
   if (!dueDate) {
     return { key: 'ontrack', label: 'On track', color: '#22c55e', glow: '', overdue: false };

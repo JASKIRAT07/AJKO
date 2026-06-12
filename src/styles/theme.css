@@ -85,11 +85,15 @@ a { color: inherit; text-decoration: none; }
 .glow-blue  { border-color: rgba(59,130,246,.35); animation: pulseBlue 2.8s ease-in-out infinite; }
 .glow-green { border-color: rgba(34,197,94,.35); animation: pulseGreen 2.8s ease-in-out infinite; }
 .glow-red   { border-color: rgba(239,68,68,.55); animation: pulseRed 2s ease-in-out infinite; }
+.glow-teal  { border-color: rgba(20,184,166,.35); animation: pulseTeal 2.8s ease-in-out infinite; }
+.glow-amber { border-color: rgba(245,158,11,.4); animation: pulseAmber 2.4s ease-in-out infinite; }
 
 @keyframes pulseOrange { 0%,100%{box-shadow:0 8px 24px rgba(255,107,53,.10)} 50%{box-shadow:0 8px 30px rgba(255,107,53,.28)} }
 @keyframes pulseBlue   { 0%,100%{box-shadow:0 8px 24px rgba(59,130,246,.10)} 50%{box-shadow:0 8px 30px rgba(59,130,246,.28)} }
 @keyframes pulseGreen  { 0%,100%{box-shadow:0 8px 24px rgba(34,197,94,.10)} 50%{box-shadow:0 8px 30px rgba(34,197,94,.28)} }
 @keyframes pulseRed    { 0%,100%{box-shadow:0 8px 24px rgba(239,68,68,.18)} 50%{box-shadow:0 10px 34px rgba(239,68,68,.42)} }
+@keyframes pulseTeal   { 0%,100%{box-shadow:0 8px 24px rgba(20,184,166,.10)} 50%{box-shadow:0 8px 30px rgba(20,184,166,.28)} }
+@keyframes pulseAmber  { 0%,100%{box-shadow:0 8px 24px rgba(245,158,11,.12)} 50%{box-shadow:0 8px 30px rgba(245,158,11,.34)} }
 
 /* buttons */
 .btn {
@@ -150,14 +154,11 @@ a { color: inherit; text-decoration: none; }
 .pipeline { display: flex; align-items: center; gap: 6px; }
 .pipe-step { display: flex; align-items: center; gap: 6px; flex: 1; }
 .pipe-dot { width: 12px; height: 12px; border-radius: 50%; background: #e5e1dc; flex-shrink: 0; }
-.pipe-dot.active.s-new { background: var(--new); box-shadow: 0 0 0 4px rgba(156,163,175,.2); }
-.pipe-dot.active.s-inprogress { background: var(--blue); box-shadow: 0 0 0 4px rgba(59,130,246,.22); animation: pulseDotBlue 2s infinite; }
-.pipe-dot.active.s-ready { background: var(--green); box-shadow: 0 0 0 4px rgba(34,197,94,.22); animation: pulseDotGreen 2s infinite; }
+/* color comes from inline --c (set per stage); dot pulses gently when current */
+.pipe-dot.live { animation: pulseDot 2s ease-in-out infinite; }
 .pipe-line { flex: 1; height: 3px; border-radius: 2px; background: #e5e1dc; }
-.pipe-line.done { background: var(--green); }
 .pipe-label { font-size: 11px; color: var(--ink-faint); font-weight: 600; }
-@keyframes pulseDotBlue { 0%,100%{box-shadow:0 0 0 3px rgba(59,130,246,.2)} 50%{box-shadow:0 0 0 7px rgba(59,130,246,.1)} }
-@keyframes pulseDotGreen { 0%,100%{box-shadow:0 0 0 3px rgba(34,197,94,.2)} 50%{box-shadow:0 0 0 7px rgba(34,197,94,.1)} }
+@keyframes pulseDot { 0%,100%{ box-shadow: 0 0 0 3px var(--c, rgba(0,0,0,.12)); } 50%{ box-shadow: 0 0 0 8px transparent; } }
 
 /* media strip */
 .media-strip { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 4px 0; }

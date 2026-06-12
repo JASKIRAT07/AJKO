@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders, useUsers, useChannels, decorateOrders } from '../hooks/useCollections';
-import { greeting, todayLong, initials } from '../utils/format';
+import { greeting, todayLong, initials, isDone } from '../utils/format';
 import { RoleBadge } from '../components/Badges';
 import OrderCard from '../components/OrderCard';
 import BottomNav from '../components/BottomNav';
@@ -115,9 +115,9 @@ function VendorHome() {
   const { data: channels } = useChannels(profile);
   const orders = useMemo(() => decorateOrders(rawOrders), [rawOrders]);
 
-  const active = orders.filter((o) => o.stage !== 'ready').length;
+  const active = orders.filter((o) => !isDone(o.stage)).length;
   const overdue = orders.filter((o) => o.isOverdue).length;
-  const done = orders.filter((o) => o.stage === 'ready').length;
+  const done = orders.filter((o) => isDone(o.stage)).length;
 
   return (
     <div className="app-shell">

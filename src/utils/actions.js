@@ -1,28 +1,36 @@
 // Firestore write helpers for AJKO
 import {
-  collection, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, getDocs, query, orderBy, where,
+  collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp,
+  arrayUnion, arrayRemove, getDocs, query, orderBy, where, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { STAGE_ORDER, stageInfo } from './format';
 
-export async function moveStage(order, direction, actor) {
-  const idx = STAGE_ORDER.indexOf(order.stage);
-  const nextIdx = Math.min(STAGE_ORDER.length - 1, Math.max(0, idx + direction));
-  if (nextIdx === idx) return;
+// Move an order to a specific stage, recording a full audit entry.
+export async function setStage(order, toStage, actor) {
   const fromStage = order.stage;
-  const nextStage = STAGE_ORDER[nextIdx];
-  // Full audit entry: who, when, from → to, and direction.
+  if (!toStage || toStage === fromStage) return;
+
+  let direction;
+  if (toStage === 'rework') direction = 'rework';
+  else if (fromStage === 'rework') direction = 'forward'; // resuming work
+  else {
+    const fi = STAGE_ORDER.indexOf(fromStage);
+    const ti = STAGE_ORDER.indexOf(toStage);
+    direction = ti < fi ? 'back' : 'forward';
+  }
+
   const entry = {
-    stage: nextStage,
+    stage: toStage,
     fromStage,
-    direction: direction > 0 ? 'forward' : 'back',
+    direction,
     by: actor?.code || actor?.name || 'system',
     byName: actor?.name || '',
     byId: actor?.id || '',
     at: Date.now(),
   };
   await updateDoc(doc(db, 'orders', order.id), {
-    stage: nextStage,
+    stage: toStage,
     stageHistory: arrayUnion(entry),
   });
   // log a stage-change message in the channel
@@ -32,7 +40,7 @@ export async function moveStage(order, direction, actor) {
       orderId: order.id,
       senderId: actor?.id || '',
       senderCode: actor?.code || actor?.name || '',
-      content: `${order.appOrderNo}: ${stageInfo(fromStage).label} → ${stageInfo(nextStage).label}`,
+      content: `${order.appOrderNo}: ${stageInfo(fromStage).label} → ${stageInfo(toStage).label}`,
       type: 'stage',
       timestamp: serverTimestamp(),
     });
@@ -42,7 +50,7 @@ export async function moveStage(order, direction, actor) {
     userId: order.createdBy,
     type: 'stage',
     title: 'Stage updated',
-    body: `${order.appOrderNo} moved to ${stageInfo(nextStage).label} by ${entry.by}`,
+    body: `${order.appOrderNo} moved to ${stageInfo(toStage).label} by ${entry.by}`,
     orderId: order.id,
   });
 }
@@ -117,4 +125,57 @@ export async function createChannel({ code, name }) {
 export async function addUserToChannel(channelId, userId) {
   if (!channelId || !userId) return;
   await updateDoc(doc(db, 'channels', channelId), { memberIds: arrayUnion(userId) });
+}
+
+export async function removeUserFromChannel(channelId, userId) {
+  if (!channelId || !userId) return;
+  await updateDoc(doc(db, 'channels', channelId), { memberIds: arrayRemove(userId) });
+}
+
+export async function updateChannel(id, data) {
+  await updateDoc(doc(db, 'channels', id), data);
+}
+
+// Admin: edit a member's details. Handles vendor channel reassignment + code change.
+export async function updateMember(user, { name, phone, specialty, channelId, code }) {
+  const patch = { name, phone, specialty: specialty || '' };
+  if (user.role === 'vendor' && channelId && channelId !== user.channelId) {
+    patch.channelId = channelId;
+    patch.assignedChannels = [channelId];
+    if (code) patch.code = code;
+    if (user.channelId) await removeUserFromChannel(user.channelId, user.id);
+    await addUserToChannel(channelId, user.id);
+  }
+  await updateDoc(doc(db, 'users', user.id), patch);
+}
+
+// Admin: delete a member record. (Their Firebase Auth login, if any, must be
+// removed separately via the Admin SDK — not possible from the browser.)
+export async function deleteMember(user) {
+  if (user.role === 'vendor' && user.channelId) {
+    await removeUserFromChannel(user.channelId, user.id);
+  }
+  await deleteDoc(doc(db, 'users', user.id));
+}
+
+// Admin: delete a channel and all its orders + messages.
+export async function deleteChannel(channelId) {
+  const [orders, messages] = await Promise.all([
+    getDocs(query(collection(db, 'orders'), where('channelId', '==', channelId))),
+    getDocs(query(collection(db, 'messages'), where('channelId', '==', channelId))),
+  ]);
+  const batch = writeBatch(db);
+  orders.docs.forEach((d) => batch.delete(d.ref));
+  messages.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(doc(db, 'channels', channelId));
+  await batch.commit();
+}
+
+// Admin: delete an order and its messages.
+export async function deleteOrder(orderId) {
+  const msgs = await getDocs(query(collection(db, 'messages'), where('orderId', '==', orderId)));
+  const batch = writeBatch(db);
+  msgs.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(doc(db, 'orders', orderId));
+  await batch.commit();
 }

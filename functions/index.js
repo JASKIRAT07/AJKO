@@ -109,6 +109,7 @@ exports.scheduledReminders = onSchedule('every 60 minutes', async () => {
   for (const doc of ordersSnap.docs) {
     const o = { id: doc.id, ...doc.data() };
     if (o.isDraft) continue;
+    if (o.stage === 'handedover') continue; // fully done — no reminders
 
     const reminders = o.reminders || {};
     const updates = {};
