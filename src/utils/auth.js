@@ -36,6 +36,23 @@ export function loginIdToEmail(id) {
   return `p${digits}@ajko.app`;
 }
 
+// Plausible stored formats for a typed phone, so lookup matches whether the
+// number was saved with +91, a leading 0, or as bare digits.
+export function phoneVariants(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  const set = new Set();
+  if (raw) set.add(String(raw).trim());
+  if (digits) { set.add(digits); set.add(`+${digits}`); }
+  if (last10) {
+    set.add(last10);
+    set.add(`+91${last10}`);
+    set.add(`91${last10}`);
+    set.add(`0${last10}`);
+  }
+  return [...set].filter(Boolean).slice(0, 10);
+}
+
 export async function findUserByLoginId(id) {
   const v = String(id || '').trim();
   const users = collection(db, 'users');
@@ -43,11 +60,17 @@ export async function findUserByLoginId(id) {
   if (v.includes('@')) {
     snap = await getDocs(query(users, where('email', '==', v.toLowerCase())));
   } else {
-    snap = await getDocs(query(users, where('phone', '==', normalizePhone(v))));
+    snap = await getDocs(query(users, where('phone', 'in', phoneVariants(v))));
   }
   if (snap.empty) return null;
   const d = snap.docs[0];
   return { id: d.id, ...d.data() };
+}
+
+// True if at least one admin account exists in Firestore.
+export async function adminExists() {
+  const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'admin')));
+  return !snap.empty;
 }
 
 export async function passwordLogin(loginId, password) {

@@ -1,7 +1,7 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   passwordLogin, startPhoneOtp, confirmOtp, setPasswordForNewUser,
-  resetPasswordAfterOtp, findUserByLoginId, bootstrapFirstAdmin,
+  resetPasswordAfterOtp, findUserByLoginId, bootstrapFirstAdmin, adminExists,
 } from '../utils/auth';
 import { IcDiamond } from '../components/Icons';
 
@@ -22,7 +22,10 @@ export default function Login() {
   const [newPass, setNewPass] = useState('');
   const [resetFlow, setResetFlow] = useState(false);
   const [showBootstrap, setShowBootstrap] = useState(false);
+  const [hasAdmin, setHasAdmin] = useState(null); // null = unknown yet
   const otpRefs = useRef([]);
+
+  useEffect(() => { adminExists().then(setHasAdmin).catch(() => setHasAdmin(true)); }, []);
 
   const reset = () => {
     setErr(''); setStep('id'); setOtp(['', '', '', '', '', '']);
@@ -125,8 +128,8 @@ export default function Login() {
               {step === 'id' && (
                 <>
                   <div className="field">
-                    <label>Phone or email</label>
-                    <input className="input" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="98765 43210" />
+                    <label>Phone number</label>
+                    <input className="input" type="tel" inputMode="tel" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="98765 43210" />
                   </div>
                   {err && <p style={{ color: 'var(--red)', fontSize: 13 }}>{err}</p>}
                   <button className="btn btn-primary btn-block" disabled={busy} onClick={sendOtp}>{busy ? 'Sending…' : 'Send OTP'}</button>
@@ -160,7 +163,7 @@ export default function Login() {
           )}
         </div>
 
-        {!showBootstrap && (
+        {!showBootstrap && hasAdmin === false && (
           <p className="faint" style={{ textAlign: 'center', fontSize: 12, marginTop: 18 }}>
             New store? <span className="link" onClick={() => setShowBootstrap(true)}>Set up first admin</span>
           </p>

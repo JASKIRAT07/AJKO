@@ -8,6 +8,7 @@ import {
   createChannel, updateChannel, deleteChannel, updateMember, deleteMember,
 } from '../utils/actions';
 import { initials } from '../utils/format';
+import { RoleBadge } from '../components/Badges';
 import BottomNav from '../components/BottomNav';
 import { IcPlus, IcSearch, IcChannels } from '../components/Icons';
 
@@ -27,18 +28,21 @@ export default function Members() {
 
   const channelName = (cid) => { const c = channels.find((x) => x.id === cid); return c ? c.code : '—'; };
 
-  const members = users.filter((u) => u.role !== 'admin');
-  const filtered = members.filter((u) => {
-    if (tab === 'vendors' && u.role !== 'vendor') return false;
-    if (tab === 'team' && u.role !== 'team') return false;
-    if (q && !`${u.name} ${u.code} ${u.specialty || ''}`.toLowerCase().includes(q.toLowerCase())) return false;
-    return true;
+  // Members scoped to the current tab (before search) — drives the stat counts.
+  const scoped = users.filter((u) => {
+    if (tab === 'vendors') return u.role === 'vendor';
+    if (tab === 'team') return u.role === 'team';
+    if (tab === 'admins') return u.role === 'admin';
+    return true; // All
   });
+  const filtered = scoped.filter((u) => (
+    !q || `${u.name} ${u.code} ${u.specialty || ''}`.toLowerCase().includes(q.toLowerCase())
+  ));
 
   const stats = {
-    total: members.length,
-    active: members.filter((u) => u.isActive !== false).length,
-    inactive: members.filter((u) => u.isActive === false).length,
+    total: scoped.length,
+    active: scoped.filter((u) => u.isActive !== false).length,
+    inactive: scoped.filter((u) => u.isActive === false).length,
   };
 
   const orderStats = (u) => {
@@ -70,10 +74,11 @@ export default function Members() {
           <input className="input" style={{ border: 'none', padding: 4 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search members…" />
         </div>
 
-        <div className="toggle" style={{ marginBottom: 14 }}>
-          <button className={tab === 'all' ? 'on' : ''} onClick={() => setTab('all')}>All</button>
-          <button className={tab === 'vendors' ? 'on' : ''} onClick={() => setTab('vendors')}>Vendors</button>
-          <button className={tab === 'team' ? 'on' : ''} onClick={() => setTab('team')}>Team</button>
+        <div className="toggle" style={{ marginBottom: 14, display: 'flex', width: '100%' }}>
+          <button className={tab === 'all' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('all')}>All</button>
+          <button className={tab === 'vendors' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('vendors')}>Vendors</button>
+          <button className={tab === 'team' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('team')}>Team</button>
+          <button className={tab === 'admins' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('admins')}>Admins</button>
         </div>
 
         <div className="stat-row" style={{ marginBottom: 16 }}>
@@ -86,31 +91,39 @@ export default function Members() {
           const os = orderStats(u);
           const inactive = u.isActive === false;
           const isVendor = u.role === 'vendor';
+          const isAdminRow = u.role === 'admin';
           return (
             <div key={u.id} className="card" style={{ marginBottom: 12, opacity: inactive ? 0.55 : 1 }}>
               <div style={{ display: 'flex', gap: 12 }}>
                 <div className={`avatar ${isVendor ? '' : 'blue'}`}>{isVendor ? codeSuffix(u.code) : initials(u.name)}</div>
                 <div style={{ flex: 1 }}>
                   <div className="row-between">
-                    <div style={{ fontWeight: 800 }}>{u.name}</div>
-                    <span className="badge" style={{ background: inactive ? '#f3f0ec' : '#ecfdf3', color: inactive ? 'var(--ink-faint)' : 'var(--green)' }}>{inactive ? 'Inactive' : 'Active'}</span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 800 }}>{u.name}</span>
+                      <RoleBadge role={u.role} />
+                    </div>
+                    {!isAdminRow && <span className="badge" style={{ background: inactive ? '#f3f0ec' : '#ecfdf3', color: inactive ? 'var(--ink-faint)' : 'var(--green)' }}>{inactive ? 'Inactive' : 'Active'}</span>}
                   </div>
-                  <div className="faint" style={{ fontSize: 12 }}>
-                    {u.code}{u.specialty ? ` · ${u.specialty}` : (isVendor ? ' · Karigar' : ' · Team')}
+                  <div className="faint" style={{ fontSize: 12, marginTop: 2 }}>
+                    {u.code}{u.specialty ? ` · ${u.specialty}` : (isVendor ? ' · Karigar' : isAdminRow ? ' · Owner' : ' · Team')}
                   </div>
                   {isVendor && <div className="faint" style={{ fontSize: 12, marginTop: 2 }}>Channel: {channelName(u.channelId)}</div>}
                 </div>
               </div>
-              <div className="pill-row" style={{ marginTop: 10 }}>
-                <span className="chip spec-chip">{os.active} active</span>
-                <span className="chip spec-chip" style={{ color: 'var(--red)' }}>{os.overdue} overdue</span>
-                <span className="chip spec-chip" style={{ color: 'var(--green)' }}>{os.done} done</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button className="btn btn-ghost" style={{ flex: 1, padding: '9px' }} onClick={() => setEditUser(u)}>Edit</button>
-                <button className={inactive ? 'btn btn-primary' : 'btn btn-ghost'} style={{ flex: 1, padding: '9px' }} onClick={() => toggleActive(u)}>{inactive ? 'Activate' : 'Deactivate'}</button>
-                <button className="btn btn-danger" style={{ flex: '0 0 auto', padding: '9px 12px' }} onClick={() => removeMember(u)}>Delete</button>
-              </div>
+              {!isAdminRow && (
+                <div className="pill-row" style={{ marginTop: 10 }}>
+                  <span className="chip spec-chip">{os.active} active</span>
+                  <span className="chip spec-chip" style={{ color: 'var(--red)' }}>{os.overdue} overdue</span>
+                  <span className="chip spec-chip" style={{ color: 'var(--green)' }}>{os.done} done</span>
+                </div>
+              )}
+              {!isAdminRow && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="btn btn-ghost" style={{ flex: 1, padding: '9px' }} onClick={() => setEditUser(u)}>Edit</button>
+                  <button className={inactive ? 'btn btn-primary' : 'btn btn-ghost'} style={{ flex: 1, padding: '9px' }} onClick={() => toggleActive(u)}>{inactive ? 'Activate' : 'Deactivate'}</button>
+                  <button className="btn btn-danger" style={{ flex: '0 0 auto', padding: '9px 12px' }} onClick={() => removeMember(u)}>Delete</button>
+                </div>
+              )}
             </div>
           );
         })}
