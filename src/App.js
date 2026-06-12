@@ -12,6 +12,7 @@ import Search from './screens/Search';
 import Profile from './screens/Profile';
 import Settings from './screens/Settings';
 import Members from './screens/Members';
+import SetPassword from './screens/SetPassword';
 
 function Shell() {
   const { fbUser, profile, loading } = useAuth();
@@ -19,16 +20,21 @@ function Shell() {
   if (loading) return <div className="full-center"><div className="spinner" /></div>;
   if (!fbUser) return <Login />;
 
-  // Authenticated but no profile record (e.g. mid-setup or removed)
+  // Signed in, but no matching Firestore user (truly orphaned / removed account)
   if (!profile) {
     return (
       <div className="full-center" style={{ flexDirection: 'column', padding: 24, textAlign: 'center' }}>
         <div className="logo-mark" style={{ marginBottom: 16 }}>💎</div>
-        <h2>Almost there</h2>
-        <p className="muted">Your account isn’t linked yet. Finish first-time setup or contact your admin.</p>
+        <h2>Account not found</h2>
+        <p className="muted">No member record matches this login. Ask your admin to add your number, then try again.</p>
         <SignOutLink />
       </div>
     );
+  }
+
+  // First-time users (set up by admin) choose a password once after OTP.
+  if (profile.role !== 'admin' && profile.passwordSet !== true && profile.setupComplete !== true) {
+    return <SetPassword />;
   }
 
   return (

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  passwordLogin, startPhoneOtp, confirmOtp, setPasswordForNewUser,
-  resetPasswordAfterOtp, findUserByLoginId, bootstrapFirstAdmin, adminExists,
+  passwordLogin, startPhoneOtp, confirmOtp,
+  findUserByLoginId, bootstrapFirstAdmin, adminExists,
 } from '../utils/auth';
 import { IcDiamond } from '../components/Icons';
 
@@ -18,8 +18,6 @@ export default function Login() {
   const [step, setStep] = useState('id'); // id → otp → password
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [confirmation, setConfirmation] = useState(null);
-  const [pendingUser, setPendingUser] = useState(null);
-  const [newPass, setNewPass] = useState('');
   const [resetFlow, setResetFlow] = useState(false);
   const [showBootstrap, setShowBootstrap] = useState(false);
   const [hasAdmin, setHasAdmin] = useState(null); // null = unknown yet
@@ -29,7 +27,7 @@ export default function Login() {
 
   const reset = () => {
     setErr(''); setStep('id'); setOtp(['', '', '', '', '', '']);
-    setConfirmation(null); setPendingUser(null); setNewPass('');
+    setConfirmation(null);
   };
 
   const doSignIn = async () => {
@@ -46,8 +44,8 @@ export default function Login() {
     try {
       const u = await findUserByLoginId(loginId);
       if (!u) throw new Error('No account found. Ask your admin to add you first.');
-      const { confirmation: c, user } = await startPhoneOtp(loginId);
-      setConfirmation(c); setPendingUser(user); setStep('otp');
+      const { confirmation: c } = await startPhoneOtp(loginId);
+      setConfirmation(c); setStep('otp');
     } catch (e) {
       setErr(friendly(e));
     } finally { setBusy(false); }
@@ -63,21 +61,13 @@ export default function Login() {
     setErr(''); setBusy(true);
     try {
       await confirmOtp(confirmation, otp.join(''));
-      setStep('password');
+      // Signed in now. AuthContext resolves the profile by phone and the app
+      // routes to the home screen (or the set-password step) automatically.
+      setStep('signingin');
     } catch (e) {
       setErr(friendly(e));
-    } finally { setBusy(false); }
-  };
-
-  const finishSetup = async () => {
-    setErr(''); setBusy(true);
-    try {
-      if (resetFlow) await resetPasswordAfterOtp(newPass);
-      else await setPasswordForNewUser(pendingUser, newPass);
-      // signed in now → app routes to home automatically
-    } catch (e) {
-      setErr(friendly(e));
-    } finally { setBusy(false); }
+      setBusy(false);
+    }
   };
 
   return (
@@ -149,15 +139,11 @@ export default function Login() {
                   <p style={{ textAlign: 'center', marginTop: 12, marginBottom: 0 }}><span className="link" onClick={sendOtp}>Resend OTP</span></p>
                 </>
               )}
-              {step === 'password' && (
-                <>
-                  <div className="field">
-                    <label>New password</label>
-                    <input className="input" type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="At least 6 characters" />
-                  </div>
-                  {err && <p style={{ color: 'var(--red)', fontSize: 13 }}>{err}</p>}
-                  <button className="btn btn-primary btn-block" disabled={busy || newPass.length < 6} onClick={finishSetup}>{busy ? 'Saving…' : 'Set password & continue'}</button>
-                </>
+              {step === 'signingin' && (
+                <div className="center-col" style={{ padding: '16px 0' }}>
+                  <div className="spinner" />
+                  <p className="muted" style={{ marginTop: 12 }}>Signing you in…</p>
+                </div>
               )}
             </>
           )}

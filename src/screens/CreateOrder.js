@@ -73,13 +73,24 @@ export default function CreateOrder() {
     if (!asDraft && !valid) return;
     setBusy(true);
     try {
+      // Media + voice uploads are best-effort: a Storage hiccup must not block
+      // the order from being created.
       const uploaded = [];
+      const uploadWarnings = [];
       for (const im of images) {
-        if (im._file) uploaded.push(await uploadFile(im._file));
-        else uploaded.push({ url: im.url, type: im.type || 'image' });
+        try {
+          if (im._file) uploaded.push(await uploadFile(im._file));
+          else uploaded.push({ url: im.url, type: im.type || 'image' });
+        } catch (e) {
+          console.error('Image upload failed', e);
+          uploadWarnings.push('an image');
+        }
       }
       let voiceNote = voiceUrl;
-      if (voiceBlob) voiceNote = await uploadBlob(voiceBlob);
+      if (voiceBlob) {
+        try { voiceNote = await uploadBlob(voiceBlob); }
+        catch (e) { console.error('Voice upload failed', e); uploadWarnings.push('the voice note'); }
+      }
 
       const channelId = form.channelId;
 
@@ -106,26 +117,37 @@ export default function CreateOrder() {
 
       if (editing) {
         await updateOrder(id, payload);
+        if (uploadWarnings.length) alert(`Order saved, but ${uploadWarnings.join(' and ')} could not be uploaded (check Firebase Storage).`);
         nav(`/order/${id}`);
-      } else {
-        const newId = await createOrder({
-          ...payload,
-          createdBy: profile.id,
-          createdByCode: profile.code || profile.name,
-          createdByName: profile.name,
-        });
-        // creator joins the channel so they can keep chatting in it
+        return;
+      }
+
+      // Creating the order is the only critical write.
+      const newId = await createOrder({
+        ...payload,
+        createdBy: profile.id,
+        createdByCode: profile.code || profile.name,
+        createdByName: profile.name,
+      });
+
+      // Everything after is best-effort — the order already exists, so a failure
+      // here should never look like "order creation failed".
+      try {
         await addUserToChannel(channelId, profile.id);
         if (!asDraft && channelId) {
           await sendMessage({ channelId, orderId: newId, sender: profile, content: `New order ${appOrderNo} — ${form.itemName}`, type: 'order' });
-          // notify every vendor member of this channel
           const vendorMembers = users.filter((u) => u.role === 'vendor' && u.channelId === channelId);
           await Promise.all(vendorMembers.map((v) => notify({ userId: v.id, type: 'new', title: 'New order assigned', body: `${appOrderNo} · ${form.itemName}`, orderId: newId })));
         }
-        nav(channelId && !asDraft ? `/channel/${channelId}` : '/');
+      } catch (e) {
+        console.error('Post-create steps failed (order was still created)', e);
       }
+
+      if (uploadWarnings.length) alert(`Order created, but ${uploadWarnings.join(' and ')} could not be uploaded (check Firebase Storage).`);
+      nav(channelId && !asDraft ? `/channel/${channelId}` : '/');
     } catch (e) {
-      alert(e.message || 'Could not save order');
+      console.error('Order save failed', e);
+      alert(`Could not save order: ${e.code || e.message || 'unknown error'}`);
     } finally {
       setBusy(false);
     }
