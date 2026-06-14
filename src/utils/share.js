@@ -27,15 +27,23 @@ export async function shareOrder(order, prefetchedFiles) {
   let files = prefetchedFiles;
   if (!files && navigator.share) files = await prepareShareFiles(order);
 
+  // Decide the shareable set SYNCHRONOUSLY (no await before navigator.share, so
+  // iOS keeps the tap's activation). If the full set is rejected — often because
+  // the .webm voice note isn't a shareable type — retry with images only.
+  let toShare = null;
+  if (navigator.share && files && files.length) {
+    const canShare = (f) => !navigator.canShare || navigator.canShare({ files: f });
+    if (canShare(files)) {
+      toShare = files;
+    } else {
+      const imgs = files.filter((f) => f.type.startsWith('image'));
+      if (imgs.length && canShare(imgs)) toShare = imgs;
+    }
+  }
+
   try {
-    if (files && files.length && navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
-      await navigator.share({ text, files });
-      return;
-    }
-    if (navigator.share) {
-      await navigator.share({ text });
-      return;
-    }
+    if (toShare) { await navigator.share({ text, files: toShare }); return; }
+    if (navigator.share) { await navigator.share({ text }); return; }
   } catch (e) {
     if (e && e.name === 'AbortError') return; // user dismissed the sheet
   }
