@@ -106,7 +106,7 @@ export default function Conversations() {
         </select>
       </div>
 
-      <div className="screen" style={{ paddingTop: 12, paddingBottom: 96 }}>
+      <div className="screen" style={{ paddingTop: 12, paddingBottom: 156 }}>
         {!channelId ? (
           <div className="empty"><div className="big">💬</div>No channels available</div>
         ) : messages.length === 0 ? (
@@ -149,7 +149,7 @@ export default function Conversations() {
       )}
 
       {channelId && (
-        <div className="input-bar">
+        <div className="input-bar above-nav">
           <button className="round-btn soft" onClick={() => setShowTagger(true)} title="Tag an order" style={{ fontWeight: 800 }}>@</button>
           <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${channel?.code || ''}…`} onKeyDown={(e) => e.key === 'Enter' && send()} />
           <button className={`round-btn ${recording ? 'primary' : 'soft'}`} onClick={toggleRec} style={recording ? { color: '#fff' } : {}}>{recording ? '⏹' : <IcMic size={20} />}</button>

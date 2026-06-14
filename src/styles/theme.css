@@ -338,3 +338,10 @@ a { color: inherit; text-decoration: none; }
   .screen { padding-bottom: 40px; }
   .screen-pad-bottom { padding-bottom: 48px; }
 }
+
+/* chat input bar that coexists with the bottom nav (Conversations tab) */
+.input-bar.above-nav { bottom: calc(60px + env(safe-area-inset-bottom)); }
+@media (min-width: 768px) {
+  /* desktop has a sidebar instead of bottom nav, so sit at the bottom */
+  .input-bar.above-nav { bottom: 0; }
+}
