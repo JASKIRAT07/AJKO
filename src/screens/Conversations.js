@@ -34,7 +34,12 @@ export default function Conversations() {
     if (!channelId && channels.length) setChannelId(channels[0].id);
   }, [channels, channelId]);
 
-  const { data: messages } = useChannelMessages(channelId);
+  const { data: rawMessages } = useChannelMessages(channelId);
+  // Only real chat messages — never stage/order system entries (audit lives on the order).
+  const messages = useMemo(
+    () => rawMessages.filter((m) => m.type !== 'stage' && m.type !== 'order'),
+    [rawMessages]
+  );
   const channel = channels.find((c) => c.id === channelId);
 
   const orderByNo = useMemo(() => {
