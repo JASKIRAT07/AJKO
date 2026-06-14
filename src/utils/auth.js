@@ -154,6 +154,7 @@ export async function bootstrapFirstAdmin({ name, email, password }) {
     role: 'admin',
     code: 'ADMIN',
     specialty: 'Owner',
+    channelId: null,
     assignedChannels: [],
     isActive: true,
     passwordSet: true,

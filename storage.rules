@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Order media + voice notes. Tokenised download URLs (used for WhatsApp
+    // sharing) keep working regardless; in-app access requires sign-in.
+    match /{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 25 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType.matches('video/.*')
+            || request.resource.contentType.matches('audio/.*'));
+    }
+  }
+}

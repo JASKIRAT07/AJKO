@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  collection, onSnapshot, doc, updateDoc,
+  collection, onSnapshot, doc, updateDoc, setDoc,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { enablePush } from '../serviceWorkerRegistration';
@@ -14,6 +14,7 @@ export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const mirrorSig = useRef('');
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -21,15 +22,15 @@ export function AuthProvider({ children }) {
       if (!u) {
         setProfile(null);
         setLoading(false);
+        mirrorSig.current = '';
       }
     });
     return unsub;
   }, []);
 
-  // Resolve the profile for the signed-in user. We match by authUid first, then
-  // fall back to matching the phone number (last 10 digits) so a user who just
-  // verified via OTP — and whose authUid isn't linked yet — is found anyway. On
-  // a phone match we link the authUid so subsequent lookups are direct.
+  // Resolve the profile (by authUid, falling back to phone), enforce deactivation,
+  // and maintain the rules-validated accounts/{uid} mirror BEFORE unblocking the
+  // app, so role/channel-scoped queries succeed on first render.
   useEffect(() => {
     if (!fbUser) return undefined;
     setLoading(true);
@@ -43,19 +44,41 @@ export function AuthProvider({ children }) {
           const want = last10(fbUser.phoneNumber);
           p = docs.find((u) => want && last10(u.phone) === want);
           if (p && p.authUid !== fbUser.uid) {
+            try { await updateDoc(doc(db, 'users', p.id), { authUid: fbUser.uid }); } catch { /* best effort */ }
+          }
+        }
+
+        // Deactivated accounts cannot use the app on ANY login path.
+        if (p && p.isActive === false) {
+          await signOut(auth);
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+
+        if (p) {
+          const sig = `${p.id}|${p.role}|${p.channelId || ''}|${p.isActive !== false}`;
+          if (sig !== mirrorSig.current) {
             try {
-              await updateDoc(doc(db, 'users', p.id), { authUid: fbUser.uid });
+              await setDoc(doc(db, 'accounts', fbUser.uid), {
+                userId: p.id,
+                role: p.role,
+                channelId: p.channelId || null,
+                isActive: p.isActive !== false,
+              });
+              mirrorSig.current = sig;
             } catch (e) {
-              // best-effort link; profile still resolves locally
+              // eslint-disable-next-line no-console
+              console.error('account mirror write failed', e);
             }
           }
+          enablePush(p.id);
         }
 
         setProfile(p || null);
         setLoading(false);
-        if (p) enablePush(p.id);
       },
-      () => setLoading(false)
+      (err) => { console.error('users listener error', err); setLoading(false); }
     );
     return unsub;
   }, [fbUser]);
