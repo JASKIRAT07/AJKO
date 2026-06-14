@@ -12,12 +12,13 @@ async function urlToFile(url, name) {
 // the tap — iOS Safari rejects file shares that come after an await.
 export async function prepareShareFiles(order) {
   if (!navigator.share || !order) return [];
-  const sources = [
-    ...(order.images || []).slice(0, 4).map((m, i) => ({ url: typeof m === 'string' ? m : m.url, name: `${order.appOrderNo || 'order'}-${i + 1}` })),
-    ...(order.voiceNote ? [{ url: order.voiceNote, name: `${order.appOrderNo || 'order'}-voice` }] : []),
-  ];
+  // Images only — WhatsApp/iOS reject the .webm voice note ("item cannot be
+  // shared"), which blocks the whole share. The voice note travels as a link.
+  const sources = (order.images || []).slice(0, 4)
+    .map((m, i) => ({ url: typeof m === 'string' ? m : m.url, name: `${order.appOrderNo || 'order'}-${i + 1}` }));
   const built = await Promise.all(sources.map((s) => urlToFile(s.url, s.name).catch(() => null)));
-  return built.filter(Boolean);
+  // Keep only real image files so an odd content-type can't poison the share.
+  return built.filter((f) => f && f.type.startsWith('image'));
 }
 
 // Shares an order. Returns a status object so the UI can explain what happened.
@@ -33,7 +34,7 @@ export async function shareOrder(order, prefetchedFiles) {
   let files = prefetchedFiles;
   if (!files) files = await prepareShareFiles(order);
   const built = files ? files.length : 0;
-  const wanted = (order.images || []).length + (order.voiceNote ? 1 : 0);
+  const wanted = (order.images || []).length;
 
   // Decide the shareable set synchronously (no await before navigator.share).
   let toShare = null; let mode = 'text'; let reason = '';
