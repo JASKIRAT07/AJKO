@@ -12,6 +12,7 @@
  */
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onCall } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -19,6 +20,44 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 const db = admin.firestore();
 setGlobalOptions({ region: 'us-central1', maxInstances: 10 });
+
+// Plausible stored formats for a typed phone (mirror of the client helper).
+function phoneVariants(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  const set = new Set();
+  if (raw) set.add(String(raw).trim());
+  if (digits) { set.add(digits); set.add(`+${digits}`); }
+  if (last10) { set.add(last10); set.add(`+91${last10}`); set.add(`91${last10}`); set.add(`0${last10}`); }
+  return [...set].filter(Boolean).slice(0, 10);
+}
+
+/* ------------------------------------------------------------------ *
+ * Pre-login lookups (run with admin privileges so the users collection
+ * can stay private). Callable without auth.
+ * ------------------------------------------------------------------ */
+exports.lookupLogin = onCall(async (req) => {
+  const id = String(req.data?.loginId || '').trim();
+  if (!id) return { found: false };
+  const users = db.collection('users');
+  let snap;
+  if (id.includes('@')) {
+    snap = await users.where('email', '==', id.toLowerCase()).limit(1).get();
+  } else {
+    const variants = phoneVariants(id);
+    if (!variants.length) return { found: false };
+    snap = await users.where('phone', 'in', variants).limit(1).get();
+  }
+  if (snap.empty) return { found: false };
+  const u = snap.docs[0].data();
+  // Minimal, non-sensitive: just what the login flow needs.
+  return { found: true, isActive: u.isActive !== false, phone: u.phone || '' };
+});
+
+exports.checkAdminExists = onCall(async () => {
+  const snap = await db.collection('users').where('role', '==', 'admin').limit(1).get();
+  return { exists: !snap.empty };
+});
 
 // Which notification types each preference toggle controls.
 function allowedByPrefs(type, prefs = {}) {

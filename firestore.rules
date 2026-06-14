@@ -31,11 +31,17 @@ service cloud.firestore {
     }
 
     match /users/{id} {
-      // Login looks users up by phone before sign-in, so reads stay open.
-      allow read: if true;
+      // Private: pre-login lookups go through the lookupLogin/checkAdminExists
+      // Cloud Functions, so the directory is never publicly readable.
+      allow read: if signedIn();
       allow create: if isAdmin() || (signedIn() && request.resource.data.authUid == request.auth.uid);
       allow update: if isAdmin()
-        || (resource.data.authUid == null && request.resource.data.authUid == request.auth.uid)
+        // First-time link: only the person who owns the phone (verified via OTP)
+        // may attach their authUid to an unlinked member record.
+        || (resource.data.authUid == null
+            && request.resource.data.authUid == request.auth.uid
+            && resource.data.phone == request.auth.token.phone_number)
+        // Self profile edit: cannot change role/channel/active status.
         || (resource.data.authUid == request.auth.uid
             && request.resource.data.role == resource.data.role
             && request.resource.data.channelId == resource.data.channelId

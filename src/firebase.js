@@ -6,6 +6,7 @@ import {
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyATpiZkyORCyC-aX2_1tGzWT5Wt2UM4P4g',
@@ -20,6 +21,7 @@ export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+export const functions = getFunctions(app); // us-central1 (matches deployed functions)
 
 // FCM web push needs a VAPID key from Firebase Console → Project settings →
 // Cloud Messaging → Web Push certificates. Paste it here to enable push.

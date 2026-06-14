@@ -14,9 +14,10 @@ import {
   updatePassword,
 } from 'firebase/auth';
 import {
-  collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp, arrayUnion,
+  collection, doc, updateDoc, addDoc, serverTimestamp, arrayUnion,
 } from 'firebase/firestore';
-import { auth, db, createRecaptcha } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions, createRecaptcha } from '../firebase';
 
 export function normalizePhone(raw) {
   if (!raw) return '';
@@ -36,41 +37,22 @@ export function loginIdToEmail(id) {
   return `p${digits}@ajko.app`;
 }
 
-// Plausible stored formats for a typed phone, so lookup matches whether the
-// number was saved with +91, a leading 0, or as bare digits.
-export function phoneVariants(raw) {
-  const digits = String(raw || '').replace(/\D/g, '');
-  const last10 = digits.slice(-10);
-  const set = new Set();
-  if (raw) set.add(String(raw).trim());
-  if (digits) { set.add(digits); set.add(`+${digits}`); }
-  if (last10) {
-    set.add(last10);
-    set.add(`+91${last10}`);
-    set.add(`91${last10}`);
-    set.add(`0${last10}`);
-  }
-  return [...set].filter(Boolean).slice(0, 10);
-}
-
+// Pre-login lookups go through Cloud Functions so the users collection can stay
+// private (no anonymous read of names/phones).
 export async function findUserByLoginId(id) {
-  const v = String(id || '').trim();
-  const users = collection(db, 'users');
-  let snap;
-  if (v.includes('@')) {
-    snap = await getDocs(query(users, where('email', '==', v.toLowerCase())));
-  } else {
-    snap = await getDocs(query(users, where('phone', 'in', phoneVariants(v))));
-  }
-  if (snap.empty) return null;
-  const d = snap.docs[0];
-  return { id: d.id, ...d.data() };
+  const res = await httpsCallable(functions, 'lookupLogin')({ loginId: id });
+  return res.data?.found ? res.data : null; // { found, isActive, phone }
 }
 
-// True if at least one admin account exists in Firestore.
+// True if at least one admin exists. Fails safe (hides the bootstrap link) if
+// the lookup can't run.
 export async function adminExists() {
-  const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'admin')));
-  return !snap.empty;
+  try {
+    const res = await httpsCallable(functions, 'checkAdminExists')();
+    return !!res.data?.exists;
+  } catch {
+    return true;
+  }
 }
 
 export async function passwordLogin(loginId, password) {
@@ -143,11 +125,9 @@ export async function createMemberRecord({ name, phone, email, role, code, speci
 
 // One-time bootstrap for the very first admin (used when the users collection is empty).
 export async function bootstrapFirstAdmin({ name, email, password }) {
-  const users = collection(db, 'users');
-  const existing = await getDocs(users);
-  if (!existing.empty) throw new Error('Setup already done — an admin already exists.');
+  if (await adminExists()) throw new Error('Setup already done — an admin already exists.');
   const cred = await createUserWithEmailAndPassword(auth, email.toLowerCase(), password);
-  await addDoc(users, {
+  await addDoc(collection(db, 'users'), {
     name,
     email: email.toLowerCase(),
     phone: '',
