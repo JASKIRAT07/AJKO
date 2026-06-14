@@ -30,3 +30,28 @@ export async function uploadFile(file, folder = 'orders') {
   return { url, type: file.type?.startsWith('video') ? 'video' : 'image', name: file.name || safe };
 }
 
+// Pick a recording format the browser supports, preferring Apple/WhatsApp-
+// friendly formats (mp4/m4a) over webm so chat voice notes play everywhere.
+export function supportedAudioMime() {
+  const prefs = ['audio/mp4', 'audio/aac', 'audio/mpeg', 'audio/webm;codecs=opus', 'audio/webm'];
+  if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+    for (const m of prefs) if (MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+function audioExt(type = '') {
+  if (type.includes('mp4') || type.includes('m4a')) return 'm4a';
+  if (type.includes('aac')) return 'aac';
+  if (type.includes('mpeg')) return 'mp3';
+  if (type.includes('ogg')) return 'ogg';
+  return 'webm';
+}
+
+export async function uploadBlob(blob, folder = 'voice') {
+  const path = `${folder}/${Date.now()}_${Math.round(Math.random() * 1e6)}.${audioExt(blob.type)}`;
+  const r = ref(storage, path);
+  await uploadBytes(r, blob); // contentType inferred from blob.type
+  return getDownloadURL(r);
+}
+

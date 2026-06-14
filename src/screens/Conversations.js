@@ -6,8 +6,9 @@ import {
 } from '../hooks/useCollections';
 import { dayKey, dayDivider, formatTime, isDone } from '../utils/format';
 import { sendMessage } from '../utils/actions';
+import { uploadFile, uploadBlob, supportedAudioMime } from '../utils/upload';
 import BottomNav from '../components/BottomNav';
-import { IcSend } from '../components/Icons';
+import { IcSend, IcMic, IcImage } from '../components/Icons';
 
 const MENTION = /(@APP-\d+)/g;
 
@@ -22,18 +23,23 @@ export default function Conversations() {
   const [channelId, setChannelId] = useState(params.get('channel') || '');
   const [text, setText] = useState('');
   const [showTagger, setShowTagger] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  const recRef = useRef(null);
+  const chunksRef = useRef([]);
   const endRef = useRef(null);
   const inputRef = useRef(null);
+  const fileRef = useRef(null);
 
-  // default to the first channel once channels load
   useEffect(() => {
     if (!channelId && channels.length) setChannelId(channels[0].id);
   }, [channels, channelId]);
 
   const { data: rawMessages } = useChannelMessages(channelId);
-  // Only real chat messages — never stage/order system entries (audit lives on the order).
+  // Real chat content only — never stage/order system entries.
   const messages = useMemo(
-    () => rawMessages.filter((m) => m.type !== 'stage' && m.type !== 'order' && m.type !== 'voice'),
+    () => rawMessages.filter((m) => m.type !== 'stage' && m.type !== 'order'),
     [rawMessages]
   );
   const channel = channels.find((c) => c.id === channelId);
@@ -63,6 +69,41 @@ export default function Conversations() {
     inputRef.current?.focus();
   };
 
+  const onPickFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !channelId) return;
+    setUploading(true);
+    try {
+      const { url, type } = await uploadFile(file, 'chat');
+      await sendMessage({ channelId, sender: profile, content: url, type });
+    } catch (err) { alert('Upload failed. Check your connection.'); }
+    finally { setUploading(false); }
+  };
+
+  const toggleRec = async () => {
+    if (!channelId) return;
+    if (recording) { recRef.current?.stop(); setRecording(false); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = supportedAudioMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      rec.ondataavailable = (ev) => chunksRef.current.push(ev.data);
+      rec.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || mime || 'audio/mp4' });
+        stream.getTracks().forEach((t) => t.stop());
+        setUploading(true);
+        try {
+          const url = await uploadBlob(blob, 'voice');
+          await sendMessage({ channelId, sender: profile, content: url, type: 'voice' });
+        } catch { alert('Could not send voice message.'); }
+        finally { setUploading(false); }
+      };
+      rec.start(); recRef.current = rec; setRecording(true);
+    } catch { alert('Microphone permission needed.'); }
+  };
+
   const renderContent = (body) => String(body || '').split(MENTION).map((p, i) => {
     if (/^@APP-\d+$/.test(p)) {
       const no = p.slice(1);
@@ -71,6 +112,13 @@ export default function Conversations() {
     }
     return p;
   });
+
+  const renderMessage = (m) => {
+    if (m.type === 'voice') return <audio src={m.content} controls style={{ width: 220, maxWidth: '100%', height: 38 }} />;
+    if (m.type === 'image') return <img src={m.content} alt="" onClick={() => setLightbox({ url: m.content, video: false })} style={{ maxWidth: 220, borderRadius: 12, cursor: 'pointer', display: 'block' }} />;
+    if (m.type === 'video') return <video src={m.content} controls playsInline style={{ maxWidth: 220, borderRadius: 12, display: 'block' }} />;
+    return <span>{renderContent(m.content)}</span>;
+  };
 
   let lastDay = null;
 
@@ -99,12 +147,13 @@ export default function Conversations() {
               {showDivider && <div className="day-divider"><span>{dayDivider(m.timestamp)}</span></div>}
               <div className={`msg ${mine ? 'out' : 'in'}`}>
                 {!mine && <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 2 }}>{m.senderCode}</div>}
-                <span>{renderContent(m.content)}</span>
+                {renderMessage(m)}
                 <div className="meta">{formatTime(m.timestamp)}</div>
               </div>
             </div>
           );
         })}
+        {uploading && <div className="faint" style={{ textAlign: 'center', fontSize: 13 }}>Sending…</div>}
         <div ref={endRef} />
       </div>
 
@@ -124,10 +173,20 @@ export default function Conversations() {
         </div>
       )}
 
+      {lightbox && (
+        <div className="lightbox" onClick={() => setLightbox(null)}>
+          <button className="lightbox-close" aria-label="Close">✕</button>
+          <img src={lightbox.url} alt="full size" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+
       {channelId && (
         <div className="input-bar above-nav">
           <button className="round-btn soft" onClick={() => setShowTagger(true)} title="Tag an order" style={{ fontWeight: 800 }}>@</button>
+          <button className="round-btn soft" onClick={() => fileRef.current?.click()} title="Photo or video"><IcImage size={20} /></button>
+          <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={onPickFile} />
           <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${channel?.code || ''}…`} onKeyDown={(e) => e.key === 'Enter' && send()} />
+          <button className={`round-btn ${recording ? 'primary' : 'soft'}`} onClick={toggleRec} title="Voice message" style={recording ? { color: '#fff' } : {}}>{recording ? '⏹' : <IcMic size={20} />}</button>
           <button className="round-btn primary" onClick={send}><IcSend size={18} /></button>
         </div>
       )}

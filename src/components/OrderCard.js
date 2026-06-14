@@ -5,7 +5,7 @@ import {
 } from '../utils/format';
 import { setStage } from '../utils/actions';
 import { shareOrder } from '../utils/share';
-import { StageBadge, UrgencyBadge } from './Badges';
+import { UrgencyBadge } from './Badges';
 import StagePipeline from './StagePipeline';
 import MediaStrip from './MediaStrip';
 import { IcWhatsApp } from './Icons';
@@ -52,8 +52,15 @@ export default function OrderCard({ order, channelCode, createdByName, inFeed })
         {order.dueDate && <span className="chip spec-chip">📅 {countdownLabel(order.dueDate)}</span>}
       </div>
 
-      <div style={{ margin: '12px 0 6px' }} onClick={go}><StagePipeline stage={order.stage} compact /></div>
-      <div className="row-between"><StageBadge stage={order.stage} /></div>
+      <div style={{ margin: '12px 0 8px' }} onClick={go}><StagePipeline stage={order.stage} compact /></div>
+      {(() => {
+        const s = stageInfo(order.stage);
+        return (
+          <div onClick={go} style={{ background: `${s.color}1a`, color: s.color, borderRadius: 10, padding: '9px 0', fontWeight: 800, fontSize: 13.5, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, cursor: 'pointer' }}>
+            <span className="dot" style={{ background: s.color }} /> {s.label}
+          </div>
+        );
+      })()}
 
       {createdByName && (
         <div className="faint" style={{ fontSize: 11, marginTop: 8 }}>
