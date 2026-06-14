@@ -8,7 +8,7 @@ import {
   getUrgency, formatDate, formatDateTime, stageInfo, allowedTransitions,
 } from '../utils/format';
 import { setStage, deleteOrder } from '../utils/actions';
-import { shareOrder } from '../utils/share';
+import { shareOrder, prepareShareFiles } from '../utils/share';
 import { StageBadge, UrgencyBadge } from '../components/Badges';
 import StagePipeline from '../components/StagePipeline';
 import MediaStrip from '../components/MediaStrip';
@@ -22,11 +22,20 @@ export default function OrderDetail() {
   const { data: channels } = useChannels(profile);
   const [order, setOrder] = useState(null);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [shareFiles, setShareFiles] = useState(null);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'orders', id), (s) => setOrder(s.exists() ? { id: s.id, ...s.data() } : null));
     return unsub;
   }, [id]);
+
+  // Pre-fetch media so the Share tap can attach files synchronously (iOS-safe).
+  const mediaKey = order ? `${(order.images || []).map((m) => (typeof m === 'string' ? m : m.url)).join(',')}|${order.voiceNote || ''}` : '';
+  useEffect(() => {
+    let alive = true;
+    if (order && mediaKey) prepareShareFiles(order).then((f) => { if (alive) setShareFiles(f); });
+    return () => { alive = false; };
+  }, [mediaKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const urgency = useMemo(() => order && getUrgency(order.dueDate, order.stage), [order]);
   if (!order) return <div className="full-center"><div className="spinner" /></div>;
@@ -156,7 +165,7 @@ export default function OrderDetail() {
       <div className="input-bar" style={{ gap: 10, padding: '12px 16px max(12px, env(safe-area-inset-bottom))' }}>
         {!isVendor && <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => nav(`/edit/${id}`)}>Edit</button>}
         {isAdmin && <button className="btn btn-danger" style={{ flex: '0 0 auto' }} onClick={removeOrder}>Delete</button>}
-        {canShare && <button className="btn btn-wa" style={{ flex: 1 }} onClick={() => shareOrder(order)}><IcWhatsApp size={18} /> Share</button>}
+        {canShare && <button className="btn btn-wa" style={{ flex: 1 }} onClick={() => shareOrder(order, shareFiles)}><IcWhatsApp size={18} /> Share</button>}
         {isTeam && <div style={{ flex: 1 }} />}
       </div>
     </div>

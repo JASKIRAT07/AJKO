@@ -7,26 +7,28 @@ async function urlToFile(url, name) {
   return new File([blob], `${name}.${ext}`, { type: blob.type || 'application/octet-stream' });
 }
 
-// Shares an order. On phones/PWAs over HTTPS it opens the native share sheet
-// with the actual images + voice note attached (pick WhatsApp there). Where the
-// platform can't share files (most desktop browsers), it falls back to a wa.me
-// text link — which still carries the media URLs.
-export async function shareOrder(order) {
-  const text = whatsappMessage(order);
+// Pre-fetch an order's media into File objects. Call this BEFORE the user taps
+// Share (e.g. when the screen opens) so the share can fire synchronously inside
+// the tap — iOS Safari rejects file shares that come after an await.
+export async function prepareShareFiles(order) {
+  if (!navigator.share || !order) return [];
   const sources = [
     ...(order.images || []).slice(0, 4).map((m, i) => ({ url: typeof m === 'string' ? m : m.url, name: `${order.appOrderNo || 'order'}-${i + 1}` })),
     ...(order.voiceNote ? [{ url: order.voiceNote, name: `${order.appOrderNo || 'order'}-voice` }] : []),
   ];
+  const built = await Promise.all(sources.map((s) => urlToFile(s.url, s.name).catch(() => null)));
+  return built.filter(Boolean);
+}
 
-  // Build File objects from the stored media (best effort).
-  let files = [];
-  if (navigator.share && sources.length) {
-    const built = await Promise.all(sources.map((s) => urlToFile(s.url, s.name).catch(() => null)));
-    files = built.filter(Boolean);
-  }
+// Shares an order. Pass pre-fetched files (from prepareShareFiles) for reliable
+// attachment on iOS; otherwise it fetches on the fly (fine on Android).
+export async function shareOrder(order, prefetchedFiles) {
+  const text = whatsappMessage(order);
+  let files = prefetchedFiles;
+  if (!files && navigator.share) files = await prepareShareFiles(order);
 
   try {
-    if (files.length && navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
+    if (files && files.length && navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
       await navigator.share({ text, files });
       return;
     }
@@ -35,9 +37,7 @@ export async function shareOrder(order) {
       return;
     }
   } catch (e) {
-    if (e && e.name === 'AbortError') return; // user dismissed the share sheet
+    if (e && e.name === 'AbortError') return; // user dismissed the sheet
   }
-
-  // Last resort: WhatsApp text link (media URLs are embedded in the message).
   window.open(whatsappUrl(order), '_blank');
 }
