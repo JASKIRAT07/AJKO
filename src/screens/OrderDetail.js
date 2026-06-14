@@ -165,7 +165,12 @@ export default function OrderDetail() {
       <div className="input-bar" style={{ gap: 10, padding: '12px 16px max(12px, env(safe-area-inset-bottom))' }}>
         {!isVendor && <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => nav(`/edit/${id}`)}>Edit</button>}
         {isAdmin && <button className="btn btn-danger" style={{ flex: '0 0 auto' }} onClick={removeOrder}>Delete</button>}
-        {canShare && <button className="btn btn-wa" style={{ flex: 1 }} onClick={() => shareOrder(order, shareFiles)}><IcWhatsApp size={18} /> Share</button>}
+        {canShare && <button className="btn btn-wa" style={{ flex: 1 }} onClick={async () => {
+          const r = await shareOrder(order, shareFiles);
+          if (r && r.mode !== 'files' && r.mode !== 'images' && r.mode !== 'cancel') {
+            alert(`Photos did NOT attach.\n\nmode: ${r.mode}\nfiles loaded: ${r.built}/${r.wanted}\nreason: ${r.reason || '—'}\n\ncanShare: ${typeof navigator.canShare}\nshare: ${typeof navigator.share}`);
+          }
+        }}><IcWhatsApp size={18} /> Share</button>}
         {isTeam && <div style={{ flex: 1 }} />}
       </div>
     </div>

@@ -20,32 +20,42 @@ export async function prepareShareFiles(order) {
   return built.filter(Boolean);
 }
 
-// Shares an order. Pass pre-fetched files (from prepareShareFiles) for reliable
-// attachment on iOS; otherwise it fetches on the fly (fine on Android).
+// Shares an order. Returns a status object so the UI can explain what happened.
+// Pass pre-fetched files (from prepareShareFiles) for reliable iOS attachment.
 export async function shareOrder(order, prefetchedFiles) {
   const text = whatsappMessage(order);
-  let files = prefetchedFiles;
-  if (!files && navigator.share) files = await prepareShareFiles(order);
 
-  // Decide the shareable set SYNCHRONOUSLY (no await before navigator.share, so
-  // iOS keeps the tap's activation). If the full set is rejected — often because
-  // the .webm voice note isn't a shareable type — retry with images only.
-  let toShare = null;
-  if (navigator.share && files && files.length) {
-    const canShare = (f) => !navigator.canShare || navigator.canShare({ files: f });
-    if (canShare(files)) {
-      toShare = files;
-    } else {
+  if (!navigator.share) {
+    window.open(whatsappUrl(order), '_blank');
+    return { mode: 'link', reason: 'no Web Share API (desktop browser)', built: 0 };
+  }
+
+  let files = prefetchedFiles;
+  if (!files) files = await prepareShareFiles(order);
+  const built = files ? files.length : 0;
+  const wanted = (order.images || []).length + (order.voiceNote ? 1 : 0);
+
+  // Decide the shareable set synchronously (no await before navigator.share).
+  let toShare = null; let mode = 'text'; let reason = '';
+  if (built) {
+    const can = (f) => !navigator.canShare || navigator.canShare({ files: f });
+    if (can(files)) { toShare = files; mode = 'files'; }
+    else {
       const imgs = files.filter((f) => f.type.startsWith('image'));
-      if (imgs.length && canShare(imgs)) toShare = imgs;
+      if (imgs.length && can(imgs)) { toShare = imgs; mode = 'images'; }
+      else { reason = 'canShare({files}) = false'; }
     }
+  } else {
+    reason = `0 of ${wanted} files loaded (CORS or fetch blocked)`;
   }
 
   try {
-    if (toShare) { await navigator.share({ text, files: toShare }); return; }
-    if (navigator.share) { await navigator.share({ text }); return; }
+    if (toShare) { await navigator.share({ text, files: toShare }); return { mode, built, wanted }; }
+    await navigator.share({ text });
+    return { mode: 'text', built, wanted, reason: reason || 'no files to attach' };
   } catch (e) {
-    if (e && e.name === 'AbortError') return; // user dismissed the sheet
+    if (e && e.name === 'AbortError') return { mode: 'cancel' };
+    window.open(whatsappUrl(order), '_blank');
+    return { mode: 'link', reason: `${e?.name || ''} ${e?.message || ''}`.trim(), built, wanted };
   }
-  window.open(whatsappUrl(order), '_blank');
 }
