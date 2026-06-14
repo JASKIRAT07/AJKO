@@ -165,9 +165,14 @@ export function whatsappMessage(order, { withLinks = false } = {}) {
     `⚖️ Weight: ${order.weight ? `${order.weight} gms` : '—'}`,
     `✨ Purity: ${order.purity || '—'}`,
     `🎨 Look: ${order.look || '—'}`,
-    `📐 Size: ${order.size || '—'}`,
-    `📅 Due: ${order.dueDate ? formatDate(order.dueDate) : '—'}`,
   ];
+  if (order.pieces) lines.push(`🔢 Pieces: ${order.pieces}`);
+  if (order.size) lines.push(`📐 Size: ${order.size}`);
+  if (order.width) lines.push(`📏 Width: ${order.width}`);
+  lines.push(`📅 Due: ${order.dueDate ? formatDate(order.dueDate) : '—'}`);
+  if (order.designDetails) lines.push(`📝 Design details: ${order.designDetails}`);
+  if (order.extraDetails) lines.push(`🗒️ Extra details: ${order.extraDetails}`);
+  if (order.sampleTaken) lines.push('✅ Sample taken');
   if (images.length) lines.push(`📎 ${images.length} image${images.length === 1 ? '' : 's'} attached`);
   if (withLinks && images.length) {
     lines.push('', '🖼️ Media:');
