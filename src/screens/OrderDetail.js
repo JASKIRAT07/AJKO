@@ -177,7 +177,7 @@ export default function OrderDetail() {
         {isAdmin && <button className="btn btn-danger" style={{ flex: '0 0 auto' }} onClick={removeOrder}>Delete</button>}
         {canShare && <button className="btn btn-wa" style={{ flex: 1 }} onClick={async () => {
           const r = await shareOrder(order, shareFiles);
-          if (r && r.mode !== 'files' && r.mode !== 'images' && r.mode !== 'cancel') {
+          if (r && r.mode !== 'files' && r.mode !== 'images' && r.mode !== 'cancel' && r.mode !== 'busy') {
             alert(`Photos did NOT attach.\n\nmode: ${r.mode}\nfiles loaded: ${r.built}/${r.wanted}\nreason: ${r.reason || '—'}\n\ncanShare: ${typeof navigator.canShare}\nshare: ${typeof navigator.share}`);
           }
         }}><IcWhatsApp size={18} /> Share</button>}

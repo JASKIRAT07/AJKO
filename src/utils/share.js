@@ -21,9 +21,14 @@ export async function prepareShareFiles(order) {
   return built.filter((f) => f && f.type.startsWith('image'));
 }
 
+// Guard so a double-tap can't call navigator.share() twice (the second throws
+// InvalidStateError and was dumping the share to a link).
+let sharing = false;
+
 // Shares an order. Returns a status object so the UI can explain what happened.
 // Pass pre-fetched files (from prepareShareFiles) for reliable iOS attachment.
 export async function shareOrder(order, prefetchedFiles) {
+  if (sharing) return { mode: 'busy' };
   const text = whatsappMessage(order);
 
   if (!navigator.share) {
@@ -50,13 +55,17 @@ export async function shareOrder(order, prefetchedFiles) {
     reason = `0 of ${wanted} files loaded (CORS or fetch blocked)`;
   }
 
+  sharing = true;
   try {
     if (toShare) { await navigator.share({ text, files: toShare }); return { mode, built, wanted }; }
     await navigator.share({ text });
     return { mode: 'text', built, wanted, reason: reason || 'no files to attach' };
   } catch (e) {
     if (e && e.name === 'AbortError') return { mode: 'cancel' };
+    if (e && e.name === 'InvalidStateError') return { mode: 'busy', reason: 'share already in progress' };
     window.open(whatsappUrl(order), '_blank');
     return { mode: 'link', reason: `${e?.name || ''} ${e?.message || ''}`.trim(), built, wanted };
+  } finally {
+    sharing = false;
   }
 }
