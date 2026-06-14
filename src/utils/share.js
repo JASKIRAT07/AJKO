@@ -7,34 +7,37 @@ async function urlToFile(url, name) {
   return new File([blob], `${name}.${ext}`, { type: blob.type || 'application/octet-stream' });
 }
 
-// Shares an order to WhatsApp/other apps. On supporting devices it attaches the
-// images + voice note via the Web Share API; otherwise it opens a wa.me text
-// link (which still includes the media URLs).
+// Shares an order. On phones/PWAs over HTTPS it opens the native share sheet
+// with the actual images + voice note attached (pick WhatsApp there). Where the
+// platform can't share files (most desktop browsers), it falls back to a wa.me
+// text link — which still carries the media URLs.
 export async function shareOrder(order) {
   const text = whatsappMessage(order);
-  const media = [
+  const sources = [
     ...(order.images || []).slice(0, 4).map((m, i) => ({ url: typeof m === 'string' ? m : m.url, name: `${order.appOrderNo || 'order'}-${i + 1}` })),
     ...(order.voiceNote ? [{ url: order.voiceNote, name: `${order.appOrderNo || 'order'}-voice` }] : []),
   ];
 
+  // Build File objects from the stored media (best effort).
+  let files = [];
+  if (navigator.share && sources.length) {
+    const built = await Promise.all(sources.map((s) => urlToFile(s.url, s.name).catch(() => null)));
+    files = built.filter(Boolean);
+  }
+
   try {
-    if (navigator.canShare && media.length) {
-      const files = [];
-      for (const m of media) {
-        try { files.push(await urlToFile(m.url, m.name)); } catch { /* skip */ }
-      }
-      if (files.length && navigator.canShare({ files })) {
-        await navigator.share({ text, files });
-        return;
-      }
+    if (files.length && navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
+      await navigator.share({ text, files });
+      return;
     }
     if (navigator.share) {
       await navigator.share({ text });
       return;
     }
   } catch (e) {
-    if (e && e.name === 'AbortError') return; // user cancelled the share sheet
+    if (e && e.name === 'AbortError') return; // user dismissed the share sheet
   }
-  // Fallback: WhatsApp text (with media URLs embedded).
+
+  // Last resort: WhatsApp text link (media URLs are embedded in the message).
   window.open(whatsappUrl(order), '_blank');
 }
