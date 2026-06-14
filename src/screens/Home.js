@@ -30,6 +30,7 @@ function DashboardHome() {
   const counts = {
     new: orders.filter((o) => o.stage === 'new').length,
     inprogress: orders.filter((o) => o.stage === 'inprogress').length,
+    rework: orders.filter((o) => o.stage === 'rework').length,
     ready: orders.filter((o) => o.stage === 'ready').length,
     overdue: orders.filter((o) => o.isOverdue).length,
   };
@@ -60,9 +61,10 @@ function DashboardHome() {
           <RoleBadge role={profile.role} />
         </div>
 
-        <div className="stat-row">
+        <div className="stat-row four">
           <StatCard label="New" num={counts.new} color="var(--new)" active={stageFilter === 'new'} onClick={() => setStageFilter(stageFilter === 'new' ? null : 'new')} />
           <StatCard label="In progress" num={counts.inprogress} color="var(--blue)" active={stageFilter === 'inprogress'} onClick={() => setStageFilter(stageFilter === 'inprogress' ? null : 'inprogress')} />
+          <StatCard label="Rework" num={counts.rework} color="var(--amber)" active={stageFilter === 'rework'} onClick={() => setStageFilter(stageFilter === 'rework' ? null : 'rework')} />
           <StatCard label="Ready" num={counts.ready} color="var(--green)" active={stageFilter === 'ready'} onClick={() => setStageFilter(stageFilter === 'ready' ? null : 'ready')} />
         </div>
 
@@ -151,7 +153,7 @@ function VendorHome() {
             const cOrders = orders.filter((o) => o.channelId === c.id);
             const cOverdue = cOrders.filter((o) => o.isOverdue).length;
             return (
-              <div key={c.id} className="card" style={{ marginBottom: 12, cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center' }} onClick={() => nav(`/channel/${c.id}`)}>
+              <div key={c.id} className="card" style={{ marginBottom: 12, cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center' }} onClick={() => nav(`/conversations?channel=${c.id}`)}>
                 <div className="avatar" style={{ fontSize: 13 }}>{c.code}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700 }}>{c.code}{c.name && c.name !== c.code ? <span className="faint" style={{ fontWeight: 500 }}> · {c.name}</span> : null}</div>

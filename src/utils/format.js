@@ -12,24 +12,27 @@ export const STAGES = {
 export const STAGE_ORDER = ['new', 'inprogress', 'ready', 'handedover'];
 
 // Allowed stage moves per current stage, scoped by role.
+// Admin + the assigned vendor channel move orders forward/back. Team members can
+// ONLY send a Ready / Handed-over order back for rework — no other stage action.
 export const STAGE_TRANSITIONS = {
   new: [
-    { to: 'inprogress', label: 'Start work', kind: 'primary', roles: ['vendor', 'team', 'admin'] },
+    { to: 'inprogress', label: 'Start work', kind: 'primary', roles: ['vendor', 'admin'] },
   ],
   inprogress: [
-    { to: 'ready', label: 'Mark ready', kind: 'primary', roles: ['vendor', 'team', 'admin'] },
-    { to: 'new', label: 'Move back', kind: 'ghost', roles: ['vendor', 'team', 'admin'] },
+    { to: 'ready', label: 'Mark ready', kind: 'primary', roles: ['vendor', 'admin'] },
+    { to: 'new', label: 'Move back', kind: 'ghost', roles: ['vendor', 'admin'] },
   ],
   ready: [
-    { to: 'handedover', label: 'Hand over', kind: 'primary', roles: ['team', 'admin'] },
+    { to: 'handedover', label: 'Hand over', kind: 'primary', roles: ['vendor', 'admin'] },
     { to: 'rework', label: 'Send for rework', kind: 'danger', roles: ['team', 'admin'] },
-    { to: 'inprogress', label: 'Move back', kind: 'ghost', roles: ['vendor', 'team', 'admin'] },
+    { to: 'inprogress', label: 'Move back', kind: 'ghost', roles: ['vendor', 'admin'] },
   ],
   rework: [
-    { to: 'inprogress', label: 'Resume work', kind: 'primary', roles: ['vendor', 'team', 'admin'] },
+    { to: 'inprogress', label: 'Resume work', kind: 'primary', roles: ['vendor', 'admin'] },
   ],
   handedover: [
-    { to: 'ready', label: 'Move back', kind: 'ghost', roles: ['team', 'admin'] },
+    { to: 'rework', label: 'Send for rework', kind: 'danger', roles: ['team', 'admin'] },
+    { to: 'ready', label: 'Move back', kind: 'ghost', roles: ['vendor', 'admin'] },
   ],
 };
 
@@ -146,18 +149,15 @@ export function initials(name) {
   return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 }
 
-// Generates the next sequential app order number, e.g. #APP-2847
-export function nextAppOrderNo(existingNumbers = []) {
-  let max = 1000;
-  existingNumbers.forEach((n) => {
-    const m = String(n || '').match(/(\d+)/);
-    if (m) max = Math.max(max, parseInt(m[1], 10));
-  });
-  return `#APP-${max + 1}`;
+// Formats an app order number from a counter value, e.g. 1 -> APP-001
+export function formatAppOrderNo(seq) {
+  return `APP-${String(seq || 0).padStart(3, '0')}`;
 }
 
-// Builds the WhatsApp share message for an order.
-export function whatsappMessage(order) {
+// Builds the WhatsApp share message for an order. Media links are appended so
+// they travel even when the share falls back to a plain wa.me text link.
+export function whatsappMessage(order, { withLinks = true } = {}) {
+  const images = order.images || [];
   const lines = [
     `🔔 New Order — ${order.appOrderNo || ''}`,
     `📋 Store ref: ${order.storeOrderNo || '—'}`,
@@ -167,10 +167,15 @@ export function whatsappMessage(order) {
     `🎨 Look: ${order.look || '—'}`,
     `📐 Size: ${order.size || '—'}`,
     `📅 Due: ${order.dueDate ? formatDate(order.dueDate) : '—'}`,
-    `📎 ${(order.images || []).length} images attached`,
+    `📎 ${images.length} image${images.length === 1 ? '' : 's'} attached`,
   ];
   if (order.voiceNote) lines.push('🎙️ Voice note attached');
-  lines.push('— AJKO');
+  if (withLinks && images.length) {
+    lines.push('', '🖼️ Media:');
+    images.forEach((m) => lines.push(typeof m === 'string' ? m : m.url));
+  }
+  if (withLinks && order.voiceNote) lines.push(`🎙️ Voice: ${order.voiceNote}`);
+  lines.push('', '— AJKO');
   return lines.join('\n');
 }
 

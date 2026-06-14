@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { updatePassword } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -9,6 +10,7 @@ import BottomNav from '../components/BottomNav';
 
 export default function Profile() {
   const { profile, isVendor, logout } = useAuth();
+  const nav = useNavigate();
   if (!profile) return null;
 
   return (
@@ -34,7 +36,7 @@ export default function Profile() {
         <ChangePassword />
 
         <div className="card" style={{ marginBottom: 12 }}>
-          <div className="row-between" onClick={() => alert('Notification settings are in the Alerts tab.')} style={{ cursor: 'pointer' }}>
+          <div className="row-between" onClick={() => nav(isVendor ? '/vendor-notifications' : '/notifications')} style={{ cursor: 'pointer' }}>
             <span style={{ fontWeight: 600 }}>🔔 Notifications</span><span className="faint">›</span>
           </div>
           <div className="divider" />

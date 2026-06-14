@@ -5,10 +5,10 @@ import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useUsers, useChannels } from '../hooks/useCollections';
 import {
-  PURITY_OPTIONS, LOOK_OPTIONS, nextAppOrderNo, whatsappMessage, countdownLabel,
+  PURITY_OPTIONS, LOOK_OPTIONS, whatsappMessage, countdownLabel,
 } from '../utils/format';
 import {
-  createOrder, updateOrder, fetchAllOrderNumbers, addUserToChannel, notify, sendMessage,
+  createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel, notify,
 } from '../utils/actions';
 import { uploadFile, uploadBlob } from '../utils/upload';
 import { IcBack, IcImage } from '../components/Icons';
@@ -52,7 +52,7 @@ export default function CreateOrder() {
         }
       });
     } else {
-      fetchAllOrderNumbers().then((nums) => setAppOrderNo(nextAppOrderNo(nums)));
+      getNextOrderNoPreview().then(setAppOrderNo).catch(() => setAppOrderNo('APP-001'));
     }
   }, [editing, id]);
 
@@ -123,7 +123,7 @@ export default function CreateOrder() {
       }
 
       // Creating the order is the only critical write.
-      const newId = await createOrder({
+      const { id: newId, appOrderNo: allocatedNo } = await createOrder({
         ...payload,
         createdBy: profile.id,
         createdByCode: profile.code || profile.name,
@@ -135,16 +135,15 @@ export default function CreateOrder() {
       try {
         await addUserToChannel(channelId, profile.id);
         if (!asDraft && channelId) {
-          await sendMessage({ channelId, orderId: newId, sender: profile, content: `New order ${appOrderNo} — ${form.itemName}`, type: 'order' });
           const vendorMembers = users.filter((u) => u.role === 'vendor' && u.channelId === channelId);
-          await Promise.all(vendorMembers.map((v) => notify({ userId: v.id, type: 'new', title: 'New order assigned', body: `${appOrderNo} · ${form.itemName}`, orderId: newId })));
+          await Promise.all(vendorMembers.map((v) => notify({ userId: v.id, type: 'new', title: 'New order assigned', body: `${allocatedNo} · ${form.itemName}`, orderId: newId })));
         }
       } catch (e) {
         console.error('Post-create steps failed (order was still created)', e);
       }
 
       if (uploadWarnings.length) alert(`Order created, but ${uploadWarnings.join(' and ')} could not be uploaded (check Firebase Storage).`);
-      nav(channelId && !asDraft ? `/channel/${channelId}` : '/');
+      nav(channelId && !asDraft ? `/order/${newId}` : '/');
     } catch (e) {
       console.error('Order save failed', e);
       alert(`Could not save order: ${e.code || e.message || 'unknown error'}`);

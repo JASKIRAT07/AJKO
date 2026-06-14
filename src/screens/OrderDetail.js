@@ -3,15 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { useUsers, useChannels, useOrderMessages } from '../hooks/useCollections';
+import { useUsers, useChannels } from '../hooks/useCollections';
 import {
-  getUrgency, formatDate, formatDateTime, whatsappUrl, stageInfo, allowedTransitions,
+  getUrgency, formatDate, formatDateTime, stageInfo, allowedTransitions,
 } from '../utils/format';
-import { setStage, sendMessage, deleteOrder } from '../utils/actions';
+import { setStage, deleteOrder } from '../utils/actions';
+import { shareOrder } from '../utils/share';
 import { StageBadge, UrgencyBadge } from '../components/Badges';
 import StagePipeline from '../components/StagePipeline';
 import MediaStrip from '../components/MediaStrip';
-import { IcBack, IcWhatsApp, IcSend } from '../components/Icons';
+import { IcBack, IcWhatsApp, IcChevron } from '../components/Icons';
 
 export default function OrderDetail() {
   const { id } = useParams();
@@ -20,8 +21,7 @@ export default function OrderDetail() {
   const { data: users } = useUsers();
   const { data: channels } = useChannels(profile);
   const [order, setOrder] = useState(null);
-  const { data: messages } = useOrderMessages(id);
-  const [text, setText] = useState('');
+  const [auditOpen, setAuditOpen] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'orders', id), (s) => setOrder(s.exists() ? { id: s.id, ...s.data() } : null));
@@ -37,7 +37,6 @@ export default function OrderDetail() {
   const canAct = isAdmin || isTeam || (isVendor && order.channelId === profile?.channelId);
   const transitions = canAct ? allowedTransitions(order.stage, profile?.role) : [];
   const canShare = isAdmin || isVendor; // not team members
-  const sendText = async () => { if (!text.trim()) return; await sendMessage({ channelId: order.channelId, orderId: id, sender: profile, content: text }); setText(''); };
   const removeOrder = async () => {
     if (!window.confirm(`Delete order ${order.appOrderNo}? This also removes its messages and cannot be undone.`)) return;
     await deleteOrder(id);
@@ -45,7 +44,7 @@ export default function OrderDetail() {
   };
 
   const specs = [
-    ['Store ref', order.storeOrderNo],
+    ['Store ref', `#${order.storeOrderNo}`],
     ['Weight', order.weight ? `${order.weight} gms` : '—'],
     ['Purity', order.purity],
     ['Look', order.look],
@@ -67,10 +66,12 @@ export default function OrderDetail() {
         {order.images?.length > 0 && <MediaStrip media={order.images} single={order.images.length === 1} />}
 
         <div style={{ marginTop: 14 }}>
-          <div className="row-between">
-            <h2 style={{ margin: 0, fontSize: 22 }}>{order.itemName}</h2>
+          <div className="order-no" style={{ fontSize: 26 }}>{order.appOrderNo}</div>
+          <div className="faint" style={{ fontSize: 13, marginTop: 2 }}>Store #{order.storeOrderNo}</div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+            {channel && <span className="chip spec-chip" style={{ fontWeight: 700 }}>💬 {channel.code}</span>}
+            <h2 style={{ margin: 0, fontSize: 20 }}>{order.itemName}</h2>
           </div>
-          <div className="faint" style={{ fontSize: 13, marginTop: 4 }}>{order.appOrderNo} · Store {order.storeOrderNo}</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <StageBadge stage={order.stage} />
             <UrgencyBadge urgency={urgency} />
@@ -114,59 +115,48 @@ export default function OrderDetail() {
               <div style={{ fontWeight: 700 }}>{channel.code}{channel.name && channel.name !== channel.code ? ` · ${channel.name}` : ''}</div>
               <div className="faint" style={{ fontSize: 12 }}>{vendorMembers.length ? vendorMembers.map((v) => v.code).join(', ') : 'No vendors yet'}</div>
             </div>
-            <button className="link" onClick={() => nav(`/channel/${channel.id}`)}>Open</button>
+            <button className="link" onClick={() => nav(`/conversations?channel=${channel.id}`)}>Chat</button>
           </div>
         </>)}
 
         {!isVendor && creator && <div className="faint" style={{ fontSize: 12, marginTop: 12 }}>Created by {creator.name} · {formatDateTime(order.createdAt)}</div>}
 
-        {order.stageHistory?.length > 0 && (<>
-          <div className="section-title">Audit log</div>
-          <div className="card card-tight">
-            {[...order.stageHistory].reverse().map((h, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: i < order.stageHistory.length - 1 ? '1px solid var(--line)' : 'none' }}>
-                <span className="dot" style={{ background: stageInfo(h.stage).color, marginTop: 6 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13 }}>
-                    {h.direction === 'create'
-                      ? <>Order created — <span style={{ color: stageInfo(h.stage).color }}>{stageInfo(h.stage).label}</span></>
-                      : <>
-                          {h.fromStage ? `${stageInfo(h.fromStage).label} ` : ''}→ <span style={{ color: stageInfo(h.stage).color }}>{stageInfo(h.stage).label}</span>
-                          {h.direction === 'back' ? ' (moved back)' : h.direction === 'rework' ? ' (sent for rework)' : ''}
-                        </>}
+        {order.stageHistory?.length > 0 && (
+          <div className="card card-tight" style={{ marginTop: 18 }}>
+            <button className="row-between" style={{ width: '100%', background: 'none', padding: 0 }} onClick={() => setAuditOpen((o) => !o)}>
+              <span style={{ fontWeight: 800 }}>Audit log <span className="faint" style={{ fontWeight: 500 }}>({order.stageHistory.length})</span></span>
+              <span style={{ transform: auditOpen ? 'rotate(90deg)' : 'none', transition: 'transform .2s' }}><IcChevron size={18} /></span>
+            </button>
+            {auditOpen && (
+              <div style={{ marginTop: 10 }}>
+                {[...order.stageHistory].reverse().map((h, i, arr) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: i < arr.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                    <span className="dot" style={{ background: stageInfo(h.stage).color, marginTop: 6 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>
+                        {h.direction === 'create'
+                          ? <>Order created — <span style={{ color: stageInfo(h.stage).color }}>{stageInfo(h.stage).label}</span></>
+                          : <>
+                              {h.fromStage ? `${stageInfo(h.fromStage).label} ` : ''}→ <span style={{ color: stageInfo(h.stage).color }}>{stageInfo(h.stage).label}</span>
+                              {h.direction === 'back' ? ' (moved back)' : h.direction === 'rework' ? ' (sent for rework)' : ''}
+                            </>}
+                      </div>
+                      <div className="faint" style={{ fontSize: 12, marginTop: 2 }}>
+                        by {h.byName ? `${h.byName} (${h.by})` : h.by} · {formatDateTime(h.at)}
+                      </div>
+                    </div>
                   </div>
-                  <div className="faint" style={{ fontSize: 12, marginTop: 2 }}>
-                    by {h.byName ? `${h.byName} (${h.by})` : h.by} · {formatDateTime(h.at)}
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        </>)}
-
-        <div className="section-title">Conversation</div>
-        {messages.filter((m) => m.type !== 'order').length === 0 && <p className="faint" style={{ fontSize: 13 }}>No messages yet.</p>}
-        {messages.map((m) => {
-          if (m.type === 'order') return null;
-          const mine = m.senderId === profile?.id;
-          return (
-            <div key={m.id} className={`msg ${mine ? 'out' : 'in'}`}>
-              {!mine && <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 2 }}>{m.senderCode}</div>}
-              {m.type === 'stage' ? <em>{m.content}</em> : m.content}
-              <div className="meta">{formatDateTime(m.timestamp)}</div>
-            </div>
-          );
-        })}
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <input className="input" style={{ borderRadius: 22 }} value={text} onChange={(e) => setText(e.target.value)} placeholder="Message about this order…" onKeyDown={(e) => e.key === 'Enter' && sendText()} />
-          <button className="round-btn primary" onClick={sendText}><IcSend size={18} /></button>
-        </div>
+        )}
       </div>
 
       <div className="input-bar" style={{ gap: 10, padding: '12px 16px max(12px, env(safe-area-inset-bottom))' }}>
         {!isVendor && <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => nav(`/edit/${id}`)}>Edit</button>}
         {isAdmin && <button className="btn btn-danger" style={{ flex: '0 0 auto' }} onClick={removeOrder}>Delete</button>}
-        {canShare && <a className="btn btn-wa" style={{ flex: 1 }} href={whatsappUrl(order)} target="_blank" rel="noreferrer"><IcWhatsApp size={18} /> Share</a>}
+        {canShare && <button className="btn btn-wa" style={{ flex: 1 }} onClick={() => shareOrder(order)}><IcWhatsApp size={18} /> Share</button>}
         {isTeam && <div style={{ flex: 1 }} />}
       </div>
     </div>

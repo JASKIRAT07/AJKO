@@ -1,10 +1,10 @@
 // Firestore write helpers for AJKO
 import {
-  collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp,
-  arrayUnion, arrayRemove, getDocs, query, orderBy, where, writeBatch,
+  collection, addDoc, doc, getDoc, updateDoc, deleteDoc, serverTimestamp,
+  arrayUnion, arrayRemove, getDocs, query, where, writeBatch, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { STAGE_ORDER, stageInfo } from './format';
+import { STAGE_ORDER, stageInfo, formatAppOrderNo } from './format';
 
 // Move an order to a specific stage, recording a full audit entry.
 export async function setStage(order, toStage, actor) {
@@ -33,18 +33,7 @@ export async function setStage(order, toStage, actor) {
     stage: toStage,
     stageHistory: arrayUnion(entry),
   });
-  // log a stage-change message in the channel
-  if (order.channelId) {
-    await addDoc(collection(db, 'messages'), {
-      channelId: order.channelId,
-      orderId: order.id,
-      senderId: actor?.id || '',
-      senderCode: actor?.code || actor?.name || '',
-      content: `${order.appOrderNo}: ${stageInfo(fromStage).label} → ${stageInfo(toStage).label}`,
-      type: 'stage',
-      timestamp: serverTimestamp(),
-    });
-  }
+  // Audit trail lives on the order (stageHistory) — not in the chat.
   // notify the order creator
   await notify({
     userId: order.createdBy,
@@ -79,31 +68,45 @@ export async function markNotificationRead(id) {
   await updateDoc(doc(db, 'notifications', id), { isRead: true });
 }
 
+// Allocates a monotonic order number from counters/orders (never reused, never
+// decremented) and creates the order atomically. Returns { id, appOrderNo }.
 export async function createOrder(data) {
-  const ref = await addDoc(collection(db, 'orders'), {
-    ...data,
-    stage: 'new',
-    stageHistory: [{
+  const counterRef = doc(db, 'counters', 'orders');
+  const newId = doc(collection(db, 'orders')).id;
+  let appOrderNo = '';
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(counterRef);
+    const seq = (snap.exists() ? (snap.data().seq || 0) : 0) + 1;
+    appOrderNo = formatAppOrderNo(seq);
+    tx.set(counterRef, { seq }, { merge: true });
+    tx.set(doc(db, 'orders', newId), {
+      ...data,
+      appOrderNo,
       stage: 'new',
-      fromStage: null,
-      direction: 'create',
-      by: data.createdByCode || 'system',
-      byName: data.createdByName || '',
-      byId: data.createdBy || '',
-      at: Date.now(),
-    }],
-    createdAt: serverTimestamp(),
+      stageHistory: [{
+        stage: 'new',
+        fromStage: null,
+        direction: 'create',
+        by: data.createdByCode || 'system',
+        byName: data.createdByName || '',
+        byId: data.createdBy || '',
+        at: Date.now(),
+      }],
+      createdAt: serverTimestamp(),
+    });
   });
-  return ref.id;
+  return { id: newId, appOrderNo };
 }
 
 export async function updateOrder(id, data) {
   await updateDoc(doc(db, 'orders', id), data);
 }
 
-export async function fetchAllOrderNumbers() {
-  const snap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc')));
-  return snap.docs.map((d) => d.data().appOrderNo).filter(Boolean);
+// Peek the next order number for display (the real one is allocated on save).
+export async function getNextOrderNoPreview() {
+  const snap = await getDoc(doc(db, 'counters', 'orders'));
+  const seq = (snap.exists() ? (snap.data().seq || 0) : 0) + 1;
+  return formatAppOrderNo(seq);
 }
 
 // Admin creates a vendor channel (e.g. code "THG"). Code must be unique.
