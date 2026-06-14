@@ -6,7 +6,7 @@ import {
 } from '../hooks/useCollections';
 import { dayKey, dayDivider, formatTime, isDone } from '../utils/format';
 import { sendMessage } from '../utils/actions';
-import { uploadBlob } from '../utils/upload';
+import { uploadBlob, supportedAudioMime } from '../utils/upload';
 import BottomNav from '../components/BottomNav';
 import { IcMic, IcSend } from '../components/Icons';
 
@@ -72,11 +72,12 @@ export default function Conversations() {
     if (recording) { recRef.current?.stop(); setRecording(false); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
+      const mime = supportedAudioMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       chunksRef.current = [];
       rec.ondataavailable = (e) => chunksRef.current.push(e.data);
       rec.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || mime || 'audio/mp4' });
         const url = await uploadBlob(blob, 'voice');
         await sendMessage({ channelId, sender: profile, content: url, type: 'voice' });
         stream.getTracks().forEach((t) => t.stop());

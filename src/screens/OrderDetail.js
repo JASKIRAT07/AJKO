@@ -7,7 +7,7 @@ import { useUsers, useChannels } from '../hooks/useCollections';
 import {
   getUrgency, formatDate, formatDateTime, stageInfo, allowedTransitions,
 } from '../utils/format';
-import { setStage, deleteOrder } from '../utils/actions';
+import { setStage, deleteOrder, updateOrder } from '../utils/actions';
 import { shareOrder, prepareShareFiles } from '../utils/share';
 import { StageBadge, UrgencyBadge } from '../components/Badges';
 import StagePipeline from '../components/StagePipeline';
@@ -113,7 +113,17 @@ export default function OrderDetail() {
 
         {order.voiceNote && (<>
           <div className="section-title">Voice note</div>
-          <audio src={order.voiceNote} controls style={{ width: '100%' }} />
+          <div className="card card-tight" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <audio src={order.voiceNote} controls style={{ flex: 1, minWidth: 0 }} />
+            {!isVendor && (
+              <button className="btn btn-danger" style={{ flex: '0 0 auto', padding: '8px 12px' }}
+                onClick={async () => {
+                  if (!window.confirm('Delete this voice note?')) return;
+                  await updateOrder(id, { voiceNote: null });
+                }}>Delete</button>
+            )}
+          </div>
+          {!isVendor && <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>To replace it, use Edit and record a new one.</div>}
         </>)}
 
         {!isVendor && channel && (<>

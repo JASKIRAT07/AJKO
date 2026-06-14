@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { IcMic } from './Icons';
+import { supportedAudioMime } from '../utils/upload';
 
 // Records a voice note via MediaRecorder and returns the Blob via onRecorded.
 export default function VoiceRecorder({ value, onRecorded, onClear }) {
@@ -14,11 +15,12 @@ export default function VoiceRecorder({ value, onRecorded, onClear }) {
   const start = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
+      const mime = supportedAudioMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       chunksRef.current = [];
       rec.ondataavailable = (e) => chunksRef.current.push(e.data);
       rec.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || mime || 'audio/mp4' });
         onRecorded(blob);
         stream.getTracks().forEach((t) => t.stop());
       };
