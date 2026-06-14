@@ -154,9 +154,9 @@ export function formatAppOrderNo(seq) {
   return `APP-${String(seq || 0).padStart(3, '0')}`;
 }
 
-// Builds the WhatsApp share message for an order. Media links are appended so
-// they travel even when the share falls back to a plain wa.me text link.
-export function whatsappMessage(order, { withLinks = true } = {}) {
+// Builds the WhatsApp share message for an order. Images attach as real files
+// via the share sheet, so no media URLs are included by default.
+export function whatsappMessage(order, { withLinks = false } = {}) {
   const images = order.images || [];
   const lines = [
     `🔔 New Order — ${order.appOrderNo || ''}`,
@@ -167,14 +167,12 @@ export function whatsappMessage(order, { withLinks = true } = {}) {
     `🎨 Look: ${order.look || '—'}`,
     `📐 Size: ${order.size || '—'}`,
     `📅 Due: ${order.dueDate ? formatDate(order.dueDate) : '—'}`,
-    `📎 ${images.length} image${images.length === 1 ? '' : 's'} attached`,
   ];
-  if (order.voiceNote) lines.push('🎙️ Voice note attached');
+  if (images.length) lines.push(`📎 ${images.length} image${images.length === 1 ? '' : 's'} attached`);
   if (withLinks && images.length) {
     lines.push('', '🖼️ Media:');
     images.forEach((m) => lines.push(typeof m === 'string' ? m : m.url));
   }
-  if (withLinks && order.voiceNote) lines.push(`🎙️ Voice: ${order.voiceNote}`);
   lines.push('', '— AJKO');
   return lines.join('\n');
 }
