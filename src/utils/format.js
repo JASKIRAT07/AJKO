@@ -172,7 +172,7 @@ export function whatsappMessage(order, { withLinks = false } = {}) {
   lines.push(`📅 Due: ${order.dueDate ? formatDate(order.dueDate) : '—'}`);
   if (order.designDetails) lines.push(`📝 Design details: ${order.designDetails}`);
   if (order.extraDetails) lines.push(`🗒️ Extra details: ${order.extraDetails}`);
-  if (order.sampleTaken) lines.push('✅ Sample taken');
+  lines.push(`🧪 Sample taken: ${order.sampleTaken ? 'Yes' : 'No'}`);
   if (images.length) lines.push(`📎 ${images.length} image${images.length === 1 ? '' : 's'} attached`);
   if (withLinks && images.length) {
     lines.push('', '🖼️ Media:');
