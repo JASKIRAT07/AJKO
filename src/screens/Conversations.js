@@ -6,9 +6,8 @@ import {
 } from '../hooks/useCollections';
 import { dayKey, dayDivider, formatTime, isDone } from '../utils/format';
 import { sendMessage } from '../utils/actions';
-import { uploadBlob, supportedAudioMime } from '../utils/upload';
 import BottomNav from '../components/BottomNav';
-import { IcMic, IcSend } from '../components/Icons';
+import { IcSend } from '../components/Icons';
 
 const MENTION = /(@APP-\d+)/g;
 
@@ -23,9 +22,6 @@ export default function Conversations() {
   const [channelId, setChannelId] = useState(params.get('channel') || '');
   const [text, setText] = useState('');
   const [showTagger, setShowTagger] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const recRef = useRef(null);
-  const chunksRef = useRef([]);
   const endRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -37,7 +33,7 @@ export default function Conversations() {
   const { data: rawMessages } = useChannelMessages(channelId);
   // Only real chat messages — never stage/order system entries (audit lives on the order).
   const messages = useMemo(
-    () => rawMessages.filter((m) => m.type !== 'stage' && m.type !== 'order'),
+    () => rawMessages.filter((m) => m.type !== 'stage' && m.type !== 'order' && m.type !== 'voice'),
     [rawMessages]
   );
   const channel = channels.find((c) => c.id === channelId);
@@ -65,25 +61,6 @@ export default function Conversations() {
     setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@${no} `);
     setShowTagger(false);
     inputRef.current?.focus();
-  };
-
-  const toggleRec = async () => {
-    if (!channelId) return;
-    if (recording) { recRef.current?.stop(); setRecording(false); return; }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = supportedAudioMime();
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      chunksRef.current = [];
-      rec.ondataavailable = (e) => chunksRef.current.push(e.data);
-      rec.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: rec.mimeType || mime || 'audio/mp4' });
-        const url = await uploadBlob(blob, 'voice');
-        await sendMessage({ channelId, sender: profile, content: url, type: 'voice' });
-        stream.getTracks().forEach((t) => t.stop());
-      };
-      rec.start(); recRef.current = rec; setRecording(true);
-    } catch { alert('Microphone permission needed.'); }
   };
 
   const renderContent = (body) => String(body || '').split(MENTION).map((p, i) => {
@@ -122,9 +99,7 @@ export default function Conversations() {
               {showDivider && <div className="day-divider"><span>{dayDivider(m.timestamp)}</span></div>}
               <div className={`msg ${mine ? 'out' : 'in'}`}>
                 {!mine && <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 2 }}>{m.senderCode}</div>}
-                {m.type === 'voice'
-                  ? <audio src={m.content} controls style={{ maxWidth: 200, height: 36 }} />
-                  : <span>{renderContent(m.content)}</span>}
+                <span>{renderContent(m.content)}</span>
                 <div className="meta">{formatTime(m.timestamp)}</div>
               </div>
             </div>
@@ -153,7 +128,6 @@ export default function Conversations() {
         <div className="input-bar above-nav">
           <button className="round-btn soft" onClick={() => setShowTagger(true)} title="Tag an order" style={{ fontWeight: 800 }}>@</button>
           <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${channel?.code || ''}…`} onKeyDown={(e) => e.key === 'Enter' && send()} />
-          <button className={`round-btn ${recording ? 'primary' : 'soft'}`} onClick={toggleRec} style={recording ? { color: '#fff' } : {}}>{recording ? '⏹' : <IcMic size={20} />}</button>
           <button className="round-btn primary" onClick={send}><IcSend size={18} /></button>
         </div>
       )}

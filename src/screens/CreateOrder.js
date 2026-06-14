@@ -10,9 +10,8 @@ import {
 import {
   createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel, notify,
 } from '../utils/actions';
-import { uploadFile, uploadBlob } from '../utils/upload';
+import { uploadFile } from '../utils/upload';
 import { IcBack, IcImage } from '../components/Icons';
-import VoiceRecorder from '../components/VoiceRecorder';
 
 const blank = {
   storeOrderNo: '', itemName: '', weight: '', purity: '', look: '',
@@ -34,8 +33,6 @@ export default function CreateOrder() {
   const [customPurity, setCustomPurity] = useState(false);
   const [customLook, setCustomLook] = useState(false);
   const [images, setImages] = useState([]);
-  const [voiceBlob, setVoiceBlob] = useState(null);
-  const [voiceUrl, setVoiceUrl] = useState(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -46,7 +43,6 @@ export default function CreateOrder() {
           setForm({ ...blank, ...d, dueDate: d.dueDate?.toDate ? d.dueDate.toDate().toISOString().slice(0, 10) : (d.dueDate || '') });
           setAppOrderNo(d.appOrderNo);
           setImages(d.images || []);
-          setVoiceUrl(d.voiceNote || null);
           if (d.purity && !PURITY_OPTIONS.includes(d.purity)) setCustomPurity(true);
           if (d.look && !LOOK_OPTIONS.includes(d.look)) setCustomLook(true);
         }
@@ -73,8 +69,7 @@ export default function CreateOrder() {
     if (!asDraft && !valid) return;
     setBusy(true);
     try {
-      // Media + voice uploads are best-effort: a Storage hiccup must not block
-      // the order from being created.
+      // Media uploads are best-effort: a Storage hiccup must not block the order.
       const uploaded = [];
       const uploadWarnings = [];
       for (const im of images) {
@@ -85,11 +80,6 @@ export default function CreateOrder() {
           console.error('Image upload failed', e);
           uploadWarnings.push('an image');
         }
-      }
-      let voiceNote = voiceUrl;
-      if (voiceBlob) {
-        try { voiceNote = await uploadBlob(voiceBlob); }
-        catch (e) { console.error('Voice upload failed', e); uploadWarnings.push('the voice note'); }
       }
 
       const channelId = form.channelId;
@@ -111,7 +101,6 @@ export default function CreateOrder() {
         channelId,
         vendorId: null,
         images: uploaded,
-        voiceNote: voiceNote || null,
         isDraft: !!asDraft,
       };
 
@@ -243,9 +232,6 @@ export default function CreateOrder() {
             </label>
           )}
         </div>
-
-        <div className="section-title">Voice note</div>
-        <VoiceRecorder value={voiceBlob || voiceUrl} onRecorded={setVoiceBlob} onClear={() => { setVoiceBlob(null); setVoiceUrl(null); }} />
 
         <div className="section-title">WhatsApp preview</div>
         <div className="card" style={{ background: '#e7ffe9', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6 }}>{preview}</div>

@@ -30,28 +30,3 @@ export async function uploadFile(file, folder = 'orders') {
   return { url, type: file.type?.startsWith('video') ? 'video' : 'image', name: file.name || safe };
 }
 
-// Pick a recording format the recording browser supports, preferring formats
-// that also play on Apple devices + attach to WhatsApp (mp4/m4a) over webm.
-export function supportedAudioMime() {
-  const prefs = ['audio/mp4', 'audio/aac', 'audio/mpeg', 'audio/webm;codecs=opus', 'audio/webm'];
-  if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
-    for (const m of prefs) if (MediaRecorder.isTypeSupported(m)) return m;
-  }
-  return '';
-}
-
-function extFromType(type = '') {
-  if (type.includes('mp4') || type.includes('m4a')) return 'm4a';
-  if (type.includes('aac')) return 'aac';
-  if (type.includes('mpeg')) return 'mp3';
-  if (type.includes('ogg')) return 'ogg';
-  return 'webm';
-}
-
-export async function uploadBlob(blob, folder = 'voice') {
-  const ext = extFromType(blob.type);
-  const path = `${folder}/${Date.now()}_${Math.round(Math.random() * 1e6)}.${ext}`;
-  const r = ref(storage, path);
-  await uploadBytes(r, blob); // contentType is inferred from blob.type
-  return getDownloadURL(r);
-}

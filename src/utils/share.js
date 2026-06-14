@@ -12,8 +12,7 @@ async function urlToFile(url, name) {
 // the tap — iOS Safari rejects file shares that come after an await.
 export async function prepareShareFiles(order) {
   if (!navigator.share || !order) return [];
-  // Images only — WhatsApp/iOS reject the .webm voice note ("item cannot be
-  // shared"), which blocks the whole share. The voice note travels as a link.
+  // Images only — attach real image files to the share sheet.
   const sources = (order.images || []).slice(0, 4)
     .map((m, i) => ({ url: typeof m === 'string' ? m : m.url, name: `${order.appOrderNo || 'order'}-${i + 1}` }));
   const built = await Promise.all(sources.map((s) => urlToFile(s.url, s.name).catch(() => null)));
