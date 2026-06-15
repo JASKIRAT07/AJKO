@@ -31,9 +31,9 @@ service cloud.firestore {
     }
 
     match /users/{id} {
-      // Private: pre-login lookups go through the lookupLogin/checkAdminExists
-      // Cloud Functions, so the directory is never publicly readable.
-      allow read: if signedIn();
+      // Readable so login can look users up by phone before sign-in. (Tighten to
+      // `if signedIn()` once the lookupLogin Cloud Function is deployed.)
+      allow read: if true;
       allow create: if isAdmin() || (signedIn() && request.resource.data.authUid == request.auth.uid);
       allow update: if isAdmin()
         // First-time link: only the person who owns the phone (verified via OTP)
