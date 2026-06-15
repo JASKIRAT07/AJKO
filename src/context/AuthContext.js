@@ -1,13 +1,13 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { auth, db, functions } from '../firebase';
+import {
+  collection, query, where, limit, getDocs, getDoc, doc, setDoc, updateDoc, onSnapshot,
+} from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { phoneVariants } from '../utils/auth';
 import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
-
-const sigOf = (u) => `${u.role}|${(u.assignedChannels || []).join(',')}|${u.channelId || ''}|${u.isActive !== false}`;
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
@@ -25,60 +25,68 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  // Establish context via resolveProfile (server-side: links authUid + sets the
-  // role/channel custom claims), then refresh the token so the claims take
-  // effect for Firestore rules. No direct collection reads before this.
   useEffect(() => {
     if (!fbUser) return undefined;
     let cancelled = false;
     let unsubDoc = null;
-    let lastSig = '';
     setLoading(true);
 
-    const resolveAndRefresh = async () => {
-      const res = await httpsCallable(functions, 'resolveProfile')();
-      const d = res?.data || {};
-      if (!d.found || d.isActive === false) return d;
-      await auth.currentUser.getIdToken(true); // pick up the new claims
-      return d;
-    };
+    const mirrorRef = doc(db, 'accounts', fbUser.uid);
+
+    const writeMirror = (id, data) => setDoc(mirrorRef, {
+      userId: id,
+      role: data.role,
+      channelId: data.channelId || null,
+      isActive: data.isActive !== false,
+    }).catch((e) => { console.error('mirror write failed', e); });
 
     (async () => {
-      let d;
       try {
-        d = await resolveAndRefresh();
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error('resolveProfile failed', e);
-        if (!cancelled) { setProfile(null); setLoading(false); }
-        return;
-      }
-      if (cancelled) return;
-      if (!d.found) { setProfile(null); setLoading(false); return; }
-      if (d.isActive === false) { await signOut(auth); setProfile(null); setLoading(false); return; }
+        // 1) Wait for the auth token to be fully ready before any Firestore call.
+        await fbUser.getIdToken();
+        if (cancelled) return;
 
-      const p = d.profile;
-      lastSig = sigOf(p);
-      setProfile(p);
-      setLoading(false);
-      enablePush(p.id);
+        // 2) Read our own accounts mirror (allowed: request.auth.uid == uid).
+        let userId = null;
+        const accSnap = await getDoc(mirrorRef);
+        if (accSnap.exists() && accSnap.data().userId) {
+          userId = accSnap.data().userId;
+        } else {
+          // 3) No mirror yet (first-time setup) → find the user doc, link the
+          //    authUid, and create the mirror.
+          let snap = await getDocs(query(collection(db, 'users'), where('authUid', '==', fbUser.uid), limit(1)));
+          if (snap.empty && fbUser.phoneNumber) {
+            snap = await getDocs(query(collection(db, 'users'), where('phone', 'in', phoneVariants(fbUser.phoneNumber))));
+          }
+          if (snap.empty) { if (!cancelled) { setProfile(null); setLoading(false); } return; }
 
-      // Live profile updates (single-doc read; allowed for any signed-in user).
-      unsubDoc = onSnapshot(doc(db, 'users', p.id), async (snap) => {
-        if (!snap.exists()) return;
-        const np = { id: snap.id, ...snap.data() };
-        if (np.isActive === false) { await signOut(auth); return; }
-        // If role/channels/active changed, re-stamp claims + refresh token.
-        const ns = sigOf(np);
-        if (ns !== lastSig) {
-          lastSig = ns;
-          try {
-            await httpsCallable(functions, 'resolveProfile')();
-            await auth.currentUser.getIdToken(true);
-          } catch { /* best effort */ }
+          const d = snap.docs[0];
+          userId = d.id;
+          const data = d.data();
+          if (data.isActive === false) { await signOut(auth); if (!cancelled) { setProfile(null); setLoading(false); } return; }
+
+          if (data.authUid !== fbUser.uid) {
+            await updateDoc(doc(db, 'users', userId), { authUid: fbUser.uid }).catch((e) => console.error('authUid link failed', e));
+          }
+          await writeMirror(userId, data);
         }
-        setProfile(np);
-      });
+
+        if (cancelled) return;
+
+        // 4) Live profile from the single users doc.
+        unsubDoc = onSnapshot(doc(db, 'users', userId), async (snap) => {
+          if (!snap.exists()) { setProfile(null); setLoading(false); return; }
+          const p = { id: snap.id, ...snap.data() };
+          if (p.isActive === false) { await signOut(auth); return; }
+          setProfile(p);
+          setLoading(false);
+          enablePush(p.id);
+          writeMirror(p.id, p); // keep mirror in sync
+        });
+      } catch (e) {
+        console.error('auth resolve failed', e);
+        if (!cancelled) { setProfile(null); setLoading(false); }
+      }
     })();
 
     return () => { cancelled = true; if (unsubDoc) unsubDoc(); };

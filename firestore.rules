@@ -2,25 +2,44 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Role/channel come from custom claims on the auth token, set by the
-    // resolveProfile Cloud Function. No cross-document get() calls = robust.
     function signedIn() { return request.auth != null; }
-    function claimsReady() { return signedIn() && request.auth.token.role != null; }
-    function active() { return claimsReady() && request.auth.token.isActive != false; }
-    function isAdmin() { return active() && request.auth.token.role == 'admin'; }
-    function isTeam() { return active() && request.auth.token.role == 'team'; }
-    function myUserId() { return request.auth.token.userId; }
-    function inMyChannels(cid) {
-      return active() && cid != null && (cid in request.auth.token.channels);
+    function acctPath() { return /databases/$(database)/documents/accounts/$(request.auth.uid); }
+    function acctExists() { return signedIn() && exists(acctPath()); }
+    function acct() { return get(acctPath()).data; }
+    function isActiveAcct() { return acctExists() && acct().isActive != false; }
+    function isAdmin() { return isActiveAcct() && acct().role == 'admin'; }
+    function isTeam() { return isActiveAcct() && acct().role == 'team'; }
+    function isVendor() { return isActiveAcct() && acct().role == 'vendor'; }
+    function myUserId() { return acct().userId; }
+    function myChannel() { return acct().channelId; }
+    function memberOf(cid) {
+      return isAdmin() || (acctExists() && cid != null
+        && myUserId() in get(/databases/$(database)/documents/channels/$(cid)).data.memberIds);
+    }
+
+    // Caller-maintained mirror of role/channel, validated against the canonical
+    // users doc so it can't be forged. A newly authenticated user can read AND
+    // create their own mirror (first-time setup).
+    match /accounts/{uid} {
+      function src() { return get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data; }
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow delete: if signedIn() && request.auth.uid == uid;
+      allow write: if signedIn() && request.auth.uid == uid
+        && src().authUid == request.auth.uid
+        && request.resource.data.role == src().role
+        && request.resource.data.isActive == src().isActive
+        && (src().role != 'vendor' || request.resource.data.channelId == src().channelId);
     }
 
     match /users/{id} {
-      // Readable to signed-in users (login lookups happen server-side already).
       allow read: if signedIn();
       allow create: if isAdmin() || (signedIn() && request.resource.data.authUid == request.auth.uid);
-      // Admin can edit anyone; a user can edit their own doc but NOT change
-      // role/channel/active. (authUid linking is done server-side.)
       allow update: if isAdmin()
+        // First-time link: attach own authUid to a matching unlinked record.
+        || (resource.data.authUid == null
+            && request.resource.data.authUid == request.auth.uid
+            && resource.data.phone == request.auth.token.phone_number)
+        // Self profile edit: cannot change role/channel/active.
         || (resource.data.authUid == request.auth.uid
             && request.resource.data.role == resource.data.role
             && request.resource.data.channelId == resource.data.channelId
@@ -29,32 +48,31 @@ service cloud.firestore {
     }
 
     match /orders/{id} {
-      allow read: if isAdmin() || inMyChannels(resource.data.channelId);
-      allow create: if isAdmin() || (isTeam() && inMyChannels(request.resource.data.channelId));
-      allow update: if isAdmin() || inMyChannels(resource.data.channelId);
+      allow read: if isAdmin() || isTeam() || (isVendor() && resource.data.channelId == myChannel());
+      allow create: if isAdmin() || isTeam();
+      allow update: if isAdmin() || isTeam() || (isVendor() && resource.data.channelId == myChannel());
       allow delete: if isAdmin();
     }
 
     match /channels/{cid} {
-      allow read: if isAdmin() || (active() && myUserId() in resource.data.memberIds);
+      allow read: if isAdmin() || (acctExists() && myUserId() in resource.data.memberIds);
       allow create: if isAdmin();
-      allow update: if isAdmin() || (active() && myUserId() in resource.data.memberIds);
+      allow update: if isAdmin() || isTeam() || (acctExists() && myUserId() in resource.data.memberIds);
       allow delete: if isAdmin();
     }
 
     match /messages/{id} {
-      allow read: if isAdmin() || inMyChannels(resource.data.channelId);
-      allow create: if isAdmin() || inMyChannels(request.resource.data.channelId);
+      allow read: if isAdmin() || memberOf(resource.data.channelId);
+      allow create: if isAdmin() || memberOf(request.resource.data.channelId);
       allow update, delete: if isAdmin();
     }
 
     match /notifications/{id} {
       allow read, update: if signedIn() && (isAdmin() || resource.data.userId == myUserId());
-      allow create: if signedIn(); // an order/message notifies other users
+      allow create: if signedIn();
       allow delete: if isAdmin() || (signedIn() && resource.data.userId == myUserId());
     }
 
-    // Monotonic order-number counter.
     match /counters/{id} {
       allow read, write: if signedIn();
     }
