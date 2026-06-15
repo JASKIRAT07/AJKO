@@ -32,39 +32,50 @@ export function AuthProvider({ children }) {
     setLoading(true);
 
     const mirrorRef = doc(db, 'accounts', fbUser.uid);
-
     const writeMirror = (id, data) => setDoc(mirrorRef, {
       userId: id,
       role: data.role,
       channelId: data.channelId || null,
       isActive: data.isActive !== false,
-    }).catch((e) => { console.error('mirror write failed', e); });
+    }).catch((e) => console.error('mirror write failed', e));
+
+    // Find the caller's user doc by authUid, then email, then phone.
+    const findUserDoc = async () => {
+      let s = await getDocs(query(collection(db, 'users'), where('authUid', '==', fbUser.uid), limit(1)));
+      if (!s.empty) return s.docs[0];
+      if (fbUser.email) {
+        s = await getDocs(query(collection(db, 'users'), where('email', '==', fbUser.email.toLowerCase()), limit(1)));
+        if (!s.empty) return s.docs[0];
+      }
+      if (fbUser.phoneNumber) {
+        s = await getDocs(query(collection(db, 'users'), where('phone', 'in', phoneVariants(fbUser.phoneNumber))));
+        if (!s.empty) return s.docs[0];
+      }
+      return null;
+    };
 
     (async () => {
       try {
-        // 1) Wait for the auth token to be fully ready before any Firestore call.
-        await fbUser.getIdToken();
-        if (cancelled) return;
+        await fbUser.getIdToken(); // ensure the token is ready before any read
 
-        // 2) Read our own accounts mirror (allowed: request.auth.uid == uid).
+        // Fast path: existing mirror.
         let userId = null;
-        const accSnap = await getDoc(mirrorRef);
-        if (accSnap.exists() && accSnap.data().userId) {
-          userId = accSnap.data().userId;
-        } else {
-          // 3) No mirror yet (first-time setup) → find the user doc, link the
-          //    authUid, and create the mirror.
-          let snap = await getDocs(query(collection(db, 'users'), where('authUid', '==', fbUser.uid), limit(1)));
-          if (snap.empty && fbUser.phoneNumber) {
-            snap = await getDocs(query(collection(db, 'users'), where('phone', 'in', phoneVariants(fbUser.phoneNumber))));
-          }
-          if (snap.empty) { if (!cancelled) { setProfile(null); setLoading(false); } return; }
+        try {
+          const accSnap = await getDoc(mirrorRef);
+          if (accSnap.exists() && accSnap.data().userId) userId = accSnap.data().userId;
+        } catch { /* mirror not readable yet — fall through to lookup */ }
 
-          const d = snap.docs[0];
-          userId = d.id;
+        // Otherwise resolve from the users collection (migration on first login).
+        if (!userId) {
+          const d = await findUserDoc();
+          if (cancelled) return;
+          if (!d) { setProfile(null); setLoading(false); return; }
+
           const data = d.data();
-          if (data.isActive === false) { await signOut(auth); if (!cancelled) { setProfile(null); setLoading(false); } return; }
+          userId = d.id;
+          if (data.isActive === false) { await signOut(auth); setProfile(null); setLoading(false); return; }
 
+          // Self-heal the authUid (e.g. changed by a prior OTP), best-effort.
           if (data.authUid !== fbUser.uid) {
             await updateDoc(doc(db, 'users', userId), { authUid: fbUser.uid }).catch((e) => console.error('authUid link failed', e));
           }
@@ -73,7 +84,7 @@ export function AuthProvider({ children }) {
 
         if (cancelled) return;
 
-        // 4) Live profile from the single users doc.
+        // Live profile from the single users doc.
         unsubDoc = onSnapshot(doc(db, 'users', userId), async (snap) => {
           if (!snap.exists()) { setProfile(null); setLoading(false); return; }
           const p = { id: snap.id, ...snap.data() };
@@ -81,7 +92,7 @@ export function AuthProvider({ children }) {
           setProfile(p);
           setLoading(false);
           enablePush(p.id);
-          writeMirror(p.id, p); // keep mirror in sync
+          writeMirror(p.id, p);
         });
       } catch (e) {
         console.error('auth resolve failed', e);

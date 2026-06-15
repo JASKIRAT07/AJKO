@@ -20,12 +20,20 @@ service cloud.firestore {
     // Caller-maintained mirror of role/channel, validated against the canonical
     // users doc so it can't be forged. A newly authenticated user can read AND
     // create their own mirror (first-time setup).
+    // True if the caller (by authUid, verified email, or verified phone) owns
+    // the given user doc data — used to let users self-heal their own link.
+    function ownsUser(u) {
+      return u.authUid == request.auth.uid
+        || (request.auth.token.email != null && u.email == request.auth.token.email)
+        || (request.auth.token.phone_number != null && u.phone == request.auth.token.phone_number);
+    }
+
     match /accounts/{uid} {
       function src() { return get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data; }
       allow read: if signedIn() && request.auth.uid == uid;
       allow delete: if signedIn() && request.auth.uid == uid;
       allow write: if signedIn() && request.auth.uid == uid
-        && src().authUid == request.auth.uid
+        && ownsUser(src())
         && request.resource.data.role == src().role
         && request.resource.data.isActive == src().isActive
         && (src().role != 'vendor' || request.resource.data.channelId == src().channelId);
@@ -35,12 +43,10 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if isAdmin() || (signedIn() && request.resource.data.authUid == request.auth.uid);
       allow update: if isAdmin()
-        // First-time link: attach own authUid to a matching unlinked record.
-        || (resource.data.authUid == null
+        // Self-link / self-heal: a user may set their own authUid and edit their
+        // own profile, but never change role/channel/active.
+        || (ownsUser(resource.data)
             && request.resource.data.authUid == request.auth.uid
-            && resource.data.phone == request.auth.token.phone_number)
-        // Self profile edit: cannot change role/channel/active.
-        || (resource.data.authUid == request.auth.uid
             && request.resource.data.role == resource.data.role
             && request.resource.data.channelId == resource.data.channelId
             && request.resource.data.isActive == resource.data.isActive);
