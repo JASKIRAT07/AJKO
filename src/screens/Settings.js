@@ -42,7 +42,7 @@ export default function Settings() {
           <div className="section-title" style={{ marginTop: 0 }}>Store</div>
           <Item label="👥 Manage members" onClick={() => nav('/members')} />
           <div className="divider" />
-          <Item label="🔔 Notification settings" onClick={() => nav('/notifications')} />
+          <Item label="🔔 Notification settings" onClick={() => nav('/notification-settings')} />
           <div className="divider" />
           <Item label="🧩 Order field customization" onClick={() => alert('Field customization — purity & look options are editable per order via "Add custom".')} />
         </div>

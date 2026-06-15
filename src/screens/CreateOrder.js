@@ -28,7 +28,7 @@ export default function CreateOrder() {
   const { data: channels } = useChannels(profile);
 
   const [form, setForm] = useState({ ...blank, channelId: params.get('channel') || '' });
-  const [appOrderNo, setAppOrderNo] = useState('#APP-…');
+  const [appOrderNo, setAppOrderNo] = useState('AO-…');
   const [customPurity, setCustomPurity] = useState(false);
   const [customLook, setCustomLook] = useState(false);
   const [images, setImages] = useState([]);
@@ -47,7 +47,7 @@ export default function CreateOrder() {
         }
       });
     } else {
-      getNextOrderNoPreview().then(setAppOrderNo).catch(() => setAppOrderNo('APP-001'));
+      getNextOrderNoPreview().then(setAppOrderNo).catch(() => setAppOrderNo('AO-001'));
     }
   }, [editing, id]);
 

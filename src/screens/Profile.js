@@ -36,7 +36,7 @@ export default function Profile() {
         <ChangePassword />
 
         <div className="card" style={{ marginBottom: 12 }}>
-          <div className="row-between" onClick={() => nav(isVendor ? '/vendor-notifications' : '/notifications')} style={{ cursor: 'pointer' }}>
+          <div className="row-between" onClick={() => nav('/notification-settings')} style={{ cursor: 'pointer' }}>
             <span style={{ fontWeight: 600 }}>🔔 Notifications</span><span className="faint">›</span>
           </div>
           <div className="divider" />

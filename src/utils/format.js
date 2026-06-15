@@ -149,9 +149,9 @@ export function initials(name) {
   return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 }
 
-// Formats an app order number from a counter value, e.g. 1 -> APP-001
+// Formats an app order number from a counter value, e.g. 1 -> AO-001
 export function formatAppOrderNo(seq) {
-  return `APP-${String(seq || 0).padStart(3, '0')}`;
+  return `AO-${String(seq || 0).padStart(3, '0')}`;
 }
 
 // Builds the WhatsApp share message for an order. Images attach as real files

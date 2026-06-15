@@ -4,7 +4,7 @@ import {
   arrayUnion, arrayRemove, getDocs, query, where, writeBatch, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { STAGE_ORDER, stageInfo, formatAppOrderNo } from './format';
+import { STAGE_ORDER, formatAppOrderNo } from './format';
 import { normalizePhone } from './auth';
 
 // Move an order to a specific stage, recording a full audit entry.
@@ -34,15 +34,8 @@ export async function setStage(order, toStage, actor) {
     stage: toStage,
     stageHistory: arrayUnion(entry),
   });
-  // Audit trail lives on the order (stageHistory) — not in the chat.
-  // notify the order creator
-  await notify({
-    userId: order.createdBy,
-    type: 'stage',
-    title: 'Stage updated',
-    body: `${order.appOrderNo} moved to ${stageInfo(toStage).label} by ${entry.by}`,
-    orderId: order.id,
-  });
+  // Audit trail lives on the order (stageHistory). No notification on stage
+  // changes — only new-order, chat, and the daily reminders notify.
 }
 
 export async function sendMessage({ channelId, orderId = null, sender, content, type = 'text' }) {

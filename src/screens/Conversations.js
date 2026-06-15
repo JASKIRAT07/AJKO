@@ -10,7 +10,7 @@ import { uploadFile, uploadBlob, supportedAudioMime } from '../utils/upload';
 import BottomNav from '../components/BottomNav';
 import { IcSend, IcMic, IcImage } from '../components/Icons';
 
-const MENTION = /(@APP-\d+)/g;
+const MENTION = /(@(?:AO|APP)-\d+)/g;
 
 export default function Conversations() {
   const { profile } = useAuth();
@@ -106,7 +106,7 @@ export default function Conversations() {
   };
 
   const renderContent = (body) => String(body || '').split(MENTION).map((p, i) => {
-    if (/^@APP-\d+$/.test(p)) {
+    if (/^@(?:AO|APP)-\d+$/.test(p)) {
       const no = p.slice(1);
       const o = orderByNo[no];
       return <span key={i} className="mention" onClick={() => o && nav(`/order/${o.id}`)}>{p}</span>;

@@ -8,7 +8,7 @@ import OrderDetail from './screens/OrderDetail';
 import CreateOrder from './screens/CreateOrder';
 import Conversations from './screens/Conversations';
 import Notifications from './screens/Notifications';
-import VendorNotifications from './screens/VendorNotifications';
+import NotificationSettings from './screens/NotificationSettings';
 import Search from './screens/Search';
 import Profile from './screens/Profile';
 import Settings from './screens/Settings';
@@ -51,7 +51,7 @@ function Shell() {
         <Route path="/order/:id" element={<OrderDetail />} />
         <Route path="/search" element={<Search />} />
         <Route path="/notifications" element={<Notifications />} />
-        <Route path="/vendor-notifications" element={<VendorNotifications />} />
+        <Route path="/notification-settings" element={<NotificationSettings />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/conversations" element={<Conversations />} />
 
