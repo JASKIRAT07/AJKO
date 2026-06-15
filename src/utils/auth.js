@@ -189,3 +189,8 @@ export function nextVendorCode(channelCode, existingCodes = []) {
 export function nextTeamCode(existingCodes = []) {
   return nextSeqCode('TM', existingCodes);
 }
+
+// Admin codes are store-wide, e.g. ADM-01.
+export function nextAdminCode(existingCodes = []) {
+  return nextSeqCode('ADM', existingCodes);
+}

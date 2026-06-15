@@ -49,8 +49,13 @@ export default function Settings() {
 
         <div className="card" style={{ marginBottom: 12 }}>
           <div className="section-title" style={{ marginTop: 0 }}>Account</div>
+          <InfoRow k="Name" v={profile.name} />
           <InfoRow k="Email" v={profile.email} />
+          <InfoRow k="Phone" v={profile.phone || '—'} />
           <InfoRow k="Role" v="Administrator" />
+          <div className="divider" />
+          <Item label="✏️ Edit profile" onClick={() => nav('/profile')} />
+          <div className="divider" />
           <Item label="🔒 Change password" onClick={() => nav('/profile')} />
         </div>
 

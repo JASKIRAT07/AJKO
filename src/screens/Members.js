@@ -3,7 +3,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useUsers, useChannels, useOrders, decorateOrders } from '../hooks/useCollections';
-import { createMemberRecord, nextVendorCode, nextTeamCode } from '../utils/auth';
+import { createMemberRecord, nextVendorCode, nextTeamCode, nextAdminCode } from '../utils/auth';
 import {
   createChannel, updateChannel, deleteChannel, updateMember, deleteMember,
 } from '../utils/actions';
@@ -149,10 +149,11 @@ function AddMemberModal({ users, channels, onClose }) {
   const [createdCode, setCreatedCode] = useState('');
 
   const channel = channels.find((c) => c.id === channelId);
-  const previewCode = role === 'team'
-    ? nextTeamCode(users.filter((u) => u.role === 'team').map((u) => u.code))
-    : (channel ? nextVendorCode(channel.code, users.filter((u) => u.role === 'vendor' && u.channelId === channelId).map((u) => u.code)) : '—');
-  const valid = name && phone && (role === 'team' || channelId);
+  let previewCode = '—';
+  if (role === 'admin') previewCode = nextAdminCode(users.filter((u) => u.role === 'admin').map((u) => u.code));
+  else if (role === 'team') previewCode = nextTeamCode(users.filter((u) => u.role === 'team').map((u) => u.code));
+  else if (channel) previewCode = nextVendorCode(channel.code, users.filter((u) => u.role === 'vendor' && u.channelId === channelId).map((u) => u.code));
+  const valid = name && phone && (role !== 'vendor' || channelId);
 
   const create = async () => {
     setBusy(true);
@@ -178,7 +179,11 @@ function AddMemberModal({ users, channels, onClose }) {
         ) : (<>
           <h3 style={{ marginTop: 0 }}>Add member</h3>
           <div className="field"><label>Role</label>
-            <div className="toggle"><button className={role === 'vendor' ? 'on' : ''} onClick={() => setRole('vendor')}>Vendor</button><button className={role === 'team' ? 'on' : ''} onClick={() => setRole('team')}>Team member</button></div>
+            <div className="toggle" style={{ display: 'flex', width: '100%' }}>
+              <button className={role === 'vendor' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setRole('vendor')}>Vendor</button>
+              <button className={role === 'team' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setRole('team')}>Team</button>
+              <button className={role === 'admin' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setRole('admin')}>Admin</button>
+            </div>
           </div>
           {role === 'vendor' && (
             <div className="field"><label>Channel <span className="req">*</span></label>
