@@ -14,10 +14,21 @@ import {
   updatePassword,
 } from 'firebase/auth';
 import {
-  collection, doc, updateDoc, addDoc, serverTimestamp, arrayUnion,
+  collection, doc, updateDoc, addDoc, serverTimestamp, arrayUnion, getDocs, query, where,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions, createRecaptcha } from '../firebase';
+
+// Plausible stored formats for a typed phone (for the direct-read fallback).
+export function phoneVariants(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  const set = new Set();
+  if (raw) set.add(String(raw).trim());
+  if (digits) { set.add(digits); set.add(`+${digits}`); }
+  if (last10) { set.add(last10); set.add(`+91${last10}`); set.add(`91${last10}`); set.add(`0${last10}`); }
+  return [...set].filter(Boolean).slice(0, 10);
+}
 
 export function normalizePhone(raw) {
   if (!raw) return '';
@@ -37,19 +48,36 @@ export function loginIdToEmail(id) {
   return `p${digits}@ajko.app`;
 }
 
-// Pre-login lookups go through Cloud Functions so the users collection can stay
-// private (no anonymous read of names/phones).
+// Pre-login lookup. Prefers the Cloud Function (keeps the users collection
+// private), but falls back to a direct read if the function isn't deployed yet.
 export async function findUserByLoginId(id) {
-  const res = await httpsCallable(functions, 'lookupLogin')({ loginId: id });
-  return res.data?.found ? res.data : null; // { found, isActive, phone }
+  try {
+    const res = await httpsCallable(functions, 'lookupLogin')({ loginId: id });
+    if (res && res.data) return res.data.found ? res.data : null;
+  } catch (e) {
+    // function not deployed / unavailable → fall back below
+  }
+  const v = String(id || '').trim();
+  const users = collection(db, 'users');
+  const snap = v.includes('@')
+    ? await getDocs(query(users, where('email', '==', v.toLowerCase())))
+    : await getDocs(query(users, where('phone', 'in', phoneVariants(v))));
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { found: true, isActive: d.data().isActive !== false, phone: d.data().phone || '', id: d.id };
 }
 
-// True if at least one admin exists. Fails safe (hides the bootstrap link) if
-// the lookup can't run.
+// True if at least one admin exists. Tries the function, then a direct read.
 export async function adminExists() {
   try {
     const res = await httpsCallable(functions, 'checkAdminExists')();
-    return !!res.data?.exists;
+    if (res && res.data) return !!res.data.exists;
+  } catch (e) {
+    // fall through to direct read
+  }
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'admin')));
+    return !snap.empty;
   } catch {
     return true;
   }
