@@ -18,7 +18,7 @@ import Sidebar from './components/Sidebar';
 import Splash from './components/Splash';
 
 function Shell() {
-  const { fbUser, profile, loading } = useAuth();
+  const { fbUser, profile, loading, authError, build } = useAuth();
 
   if (loading) return <div className="full-center"><div className="spinner" /></div>;
   if (!fbUser) return <Login />;
@@ -29,6 +29,12 @@ function Shell() {
         <div className="logo-mark" style={{ marginBottom: 16 }}>💎</div>
         <h2>Account not found</h2>
         <p className="muted">No member record matches this login. Ask your admin to add your number, then try again.</p>
+        {authError && (
+          <pre style={{ marginTop: 12, padding: 12, background: '#fff', borderRadius: 12, fontSize: 12, maxWidth: 360, whiteSpace: 'pre-wrap', textAlign: 'left', color: 'var(--red)' }}>
+            {authError}
+          </pre>
+        )}
+        <p className="faint" style={{ fontSize: 11, marginTop: 8 }}>build {build}</p>
         <SignOutLink />
       </div>
     );

@@ -9,10 +9,13 @@ import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
 
+export const AUTH_BUILD = 'auth-v7';
+
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState('');
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -58,22 +61,34 @@ export function AuthProvider({ children }) {
 
     (async () => {
       try {
+        setAuthError('');
         // Make sure the auth token is fully ready before any Firestore call.
         await fbUser.getIdToken();
         if (cancelled) return;
 
-        const d = await findUserDoc();
+        let d;
+        try {
+          d = await findUserDoc();
+        } catch (e) {
+          if (!cancelled) { setAuthError(`lookup denied: ${e.code || ''} ${e.message || e}`); setProfile(null); setLoading(false); }
+          return;
+        }
         if (cancelled) return;
-        if (!d) { setProfile(null); setLoading(false); return; } // truly not found
+        if (!d) {
+          setAuthError(`no users doc · uid=${fbUser.uid.slice(0, 6)}… · email=${fbUser.email || '—'} · phone=${fbUser.phoneNumber || '—'}`);
+          setProfile(null); setLoading(false); return;
+        }
 
         const data = d.data();
         if (data.isActive === false) { await signOut(auth); setProfile(null); setLoading(false); return; }
 
         // Self-heal the authUid link if needed, then guarantee the mirror exists.
         if (data.authUid !== fbUser.uid) {
-          await updateDoc(doc(db, 'users', d.id), { authUid: fbUser.uid }).catch((e) => console.error('authUid link failed', e));
+          await updateDoc(doc(db, 'users', d.id), { authUid: fbUser.uid }).catch((e) => { setAuthError(`link denied: ${e.code || ''} ${e.message || e}`); });
         }
-        await ensureMirror(d.id, data);
+        await setDoc(mirrorRef, {
+          userId: d.id, role: data.role, channelId: data.channelId || null, isActive: data.isActive !== false,
+        }).catch((e) => { setAuthError(`mirror denied: ${e.code || ''} ${e.message || e}`); });
         if (cancelled) return;
 
         // Live profile from the single users doc.
@@ -88,7 +103,7 @@ export function AuthProvider({ children }) {
         });
       } catch (e) {
         console.error('auth resolve failed', e);
-        if (!cancelled) { setProfile(null); setLoading(false); }
+        if (!cancelled) { setAuthError(`resolve failed: ${e.code || ''} ${e.message || e}`); setProfile(null); setLoading(false); }
       }
     })();
 
@@ -99,6 +114,8 @@ export function AuthProvider({ children }) {
     fbUser,
     profile,
     loading,
+    authError,
+    build: AUTH_BUILD,
     role: profile?.role || null,
     isAdmin: profile?.role === 'admin',
     isTeam: profile?.role === 'team',
