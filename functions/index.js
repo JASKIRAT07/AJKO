@@ -59,6 +59,15 @@ exports.checkAdminExists = onCall(async () => {
   return { exists: !snap.empty };
 });
 
+// Create an in-app notification doc (pushOnNotification then delivers the push).
+function createNotification(userId, { type, title, body, orderId = null }) {
+  if (!userId) return Promise.resolve();
+  return db.collection('notifications').add({
+    userId, type, title, body, orderId, isRead: false,
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
 // Which notification types each preference toggle controls.
 function allowedByPrefs(type, prefs = {}) {
   if (type === 'new') return prefs.newOrderAlert !== false;        // default on
@@ -105,7 +114,59 @@ exports.pushOnNotification = onDocumentCreated('notifications/{id}', async (even
 });
 
 /* ------------------------------------------------------------------ *
- * 2. Daily 11:00 + 15:00 IST reminders for un-started (New) orders
+ * 2a. Chat message → notify ONLY that channel's members (+ admins),
+ *     never the sender, never anyone outside the channel.
+ * ------------------------------------------------------------------ */
+exports.notifyOnMessage = onDocumentCreated('messages/{id}', async (event) => {
+  const m = event.data?.data();
+  if (!m || !m.channelId) return;
+  if (m.type === 'stage' || m.type === 'order') return; // system entries, not chat
+
+  const [chSnap, adminsSnap] = await Promise.all([
+    db.collection('channels').doc(m.channelId).get(),
+    db.collection('users').where('role', '==', 'admin').get(),
+  ]);
+  if (!chSnap.exists) return;
+
+  const members = chSnap.data().memberIds || [];      // assigned team + channel vendors
+  const admins = adminsSnap.docs.map((d) => d.id);    // admins are in every channel
+  const recipients = [...new Set([...members, ...admins])].filter((uid) => uid && uid !== m.senderId);
+
+  const preview = m.type === 'voice' ? '🎙️ Voice message'
+    : m.type === 'image' ? '📷 Photo'
+      : m.type === 'video' ? '🎥 Video'
+        : String(m.content || '').slice(0, 90);
+
+  await Promise.all(recipients.map((uid) => createNotification(uid, {
+    type: 'message',
+    title: `New message${m.senderCode ? ` · ${m.senderCode}` : ''}`,
+    body: preview,
+    orderId: m.orderId || null,
+  })));
+});
+
+/* ------------------------------------------------------------------ *
+ * 2b. New order → notify ONLY the vendor members of that order's channel.
+ * ------------------------------------------------------------------ */
+exports.notifyOnOrder = onDocumentCreated('orders/{id}', async (event) => {
+  const o = event.data?.data();
+  if (!o || o.isDraft || !o.channelId) return;
+
+  const snap = await db.collection('users').where('channelId', '==', o.channelId).get();
+  const vendors = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((u) => u.role === 'vendor' && u.isActive !== false);
+
+  await Promise.all(vendors.map((v) => createNotification(v.id, {
+    type: 'new',
+    title: 'New order assigned',
+    body: `${o.appOrderNo || ''} · ${o.itemName || ''}`,
+    orderId: event.params.id,
+  })));
+});
+
+/* ------------------------------------------------------------------ *
+ * 3. Daily 11:00 + 15:00 IST reminders for un-started (New) orders
  * ------------------------------------------------------------------ */
 exports.dailyVendorReminders = onSchedule(
   { schedule: '0 11,15 * * *', timeZone: 'Asia/Kolkata' },

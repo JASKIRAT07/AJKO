@@ -3,12 +3,12 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { useUsers, useChannels } from '../hooks/useCollections';
+import { useChannels } from '../hooks/useCollections';
 import {
   PURITY_OPTIONS, LOOK_OPTIONS, whatsappMessage, countdownLabel,
 } from '../utils/format';
 import {
-  createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel, notify,
+  createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel,
 } from '../utils/actions';
 import { uploadFile } from '../utils/upload';
 import { IcBack, IcImage } from '../components/Icons';
@@ -25,7 +25,6 @@ export default function CreateOrder() {
   const { profile, isAdmin } = useAuth();
   const nav = useNavigate();
   const [params] = useSearchParams();
-  const { data: users } = useUsers();
   const { data: channels } = useChannels(profile);
 
   const [form, setForm] = useState({ ...blank, channelId: params.get('channel') || '' });
@@ -112,23 +111,20 @@ export default function CreateOrder() {
       }
 
       // Creating the order is the only critical write.
-      const { id: newId, appOrderNo: allocatedNo } = await createOrder({
+      const { id: newId } = await createOrder({
         ...payload,
         createdBy: profile.id,
         createdByCode: profile.code || profile.name,
         createdByName: profile.name,
       });
 
-      // Everything after is best-effort — the order already exists, so a failure
-      // here should never look like "order creation failed".
+      // Creator joins the channel so they can keep chatting in it. The new-order
+      // notification to the channel's vendors is handled server-side by the
+      // notifyOnOrder Cloud Function (scoped, leak-proof).
       try {
         await addUserToChannel(channelId, profile.id);
-        if (!asDraft && channelId) {
-          const vendorMembers = users.filter((u) => u.role === 'vendor' && u.channelId === channelId);
-          await Promise.all(vendorMembers.map((v) => notify({ userId: v.id, type: 'new', title: 'New order assigned', body: `${allocatedNo} · ${form.itemName}`, orderId: newId })));
-        }
       } catch (e) {
-        console.error('Post-create steps failed (order was still created)', e);
+        console.error('Post-create step failed (order was still created)', e);
       }
 
       if (uploadWarnings.length) alert(`Order created, but ${uploadWarnings.join(' and ')} could not be uploaded (check Firebase Storage).`);
