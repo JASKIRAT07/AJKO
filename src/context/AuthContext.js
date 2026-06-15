@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from '../firebase';
 import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
+
+const sigOf = (u) => `${u.role}|${(u.assignedChannels || []).join(',')}|${u.channelId || ''}|${u.isActive !== false}`;
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
@@ -23,20 +25,28 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  // Establish the user context via the resolveProfile Cloud Function (it finds
-  // the user by phone/email/authUid, links the authUid, and creates/migrates
-  // the accounts mirror — all server-side, so security rules never block it).
-  // We do NOT read Firestore directly until the context exists.
+  // Establish context via resolveProfile (server-side: links authUid + sets the
+  // role/channel custom claims), then refresh the token so the claims take
+  // effect for Firestore rules. No direct collection reads before this.
   useEffect(() => {
     if (!fbUser) return undefined;
     let cancelled = false;
     let unsubDoc = null;
+    let lastSig = '';
     setLoading(true);
 
+    const resolveAndRefresh = async () => {
+      const res = await httpsCallable(functions, 'resolveProfile')();
+      const d = res?.data || {};
+      if (!d.found || d.isActive === false) return d;
+      await auth.currentUser.getIdToken(true); // pick up the new claims
+      return d;
+    };
+
     (async () => {
-      let res;
+      let d;
       try {
-        res = await httpsCallable(functions, 'resolveProfile')();
+        d = await resolveAndRefresh();
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error('resolveProfile failed', e);
@@ -44,28 +54,30 @@ export function AuthProvider({ children }) {
         return;
       }
       if (cancelled) return;
-
-      const d = res?.data || {};
       if (!d.found) { setProfile(null); setLoading(false); return; }
       if (d.isActive === false) { await signOut(auth); setProfile(null); setLoading(false); return; }
 
       const p = d.profile;
+      lastSig = sigOf(p);
       setProfile(p);
       setLoading(false);
       enablePush(p.id);
 
-      // Live updates on the single profile doc (allowed once signed in).
+      // Live profile updates (single-doc read; allowed for any signed-in user).
       unsubDoc = onSnapshot(doc(db, 'users', p.id), async (snap) => {
         if (!snap.exists()) return;
         const np = { id: snap.id, ...snap.data() };
         if (np.isActive === false) { await signOut(auth); return; }
+        // If role/channels/active changed, re-stamp claims + refresh token.
+        const ns = sigOf(np);
+        if (ns !== lastSig) {
+          lastSig = ns;
+          try {
+            await httpsCallable(functions, 'resolveProfile')();
+            await auth.currentUser.getIdToken(true);
+          } catch { /* best effort */ }
+        }
         setProfile(np);
-        // Keep the mirror in sync if role/channel/active changed.
-        try {
-          await setDoc(doc(db, 'accounts', fbUser.uid), {
-            userId: np.id, role: np.role, channelId: np.channelId || null, isActive: np.isActive !== false,
-          });
-        } catch { /* best effort */ }
       });
     })();
 

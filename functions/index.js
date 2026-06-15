@@ -193,9 +193,9 @@ exports.checkAdminExists = onCall(async () => {
 });
 
 // Called by the app AFTER auth (OTP or email/password). Finds the caller's user
-// doc, links their authUid, (re)creates the accounts mirror — all with admin
-// privileges so security rules never block it — and returns the full profile.
-// This is the single source of truth for establishing the user context.
+// doc, links their authUid, and stamps role/channels onto their auth token via
+// custom claims — all with admin privileges, so security rules never block it.
+// The client must refresh its token (getIdToken(true)) afterwards.
 exports.resolveProfile = onCall(async (req) => {
   const auth = req.auth;
   if (!auth) throw new HttpsError('unauthenticated', 'Not signed in.');
@@ -207,26 +207,17 @@ exports.resolveProfile = onCall(async (req) => {
   let id = null;
   let data = null;
 
-  // 1) Existing accounts mirror → fast path.
-  const mirror = await db.collection('accounts').doc(uid).get();
-  if (mirror.exists && mirror.data().userId) {
-    const ud = await users.doc(mirror.data().userId).get();
-    if (ud.exists && ud.data().authUid === uid) { id = ud.id; data = ud.data(); }
-  }
+  // 1) By authUid (already linked).
+  const byUid = await users.where('authUid', '==', uid).limit(1).get();
+  if (!byUid.empty) { id = byUid.docs[0].id; data = byUid.docs[0].data(); }
 
-  // 2) By authUid.
-  if (!id) {
-    const s = await users.where('authUid', '==', uid).limit(1).get();
-    if (!s.empty) { id = s.docs[0].id; data = s.docs[0].data(); }
-  }
-
-  // 3) By phone (OTP) — only an unlinked or own doc, never hijack another's.
+  // 2) By phone (OTP) — only an unlinked or own doc, never hijack another's.
   if (!id && token.phone_number) {
     const want = last10(token.phone_number);
     const all = await users.get();
     const hit = all.docs.find((d) => {
       const u = d.data();
-      return last10(u.phone) === want && want && (!u.authUid || u.authUid === uid);
+      return want && last10(u.phone) === want && (!u.authUid || u.authUid === uid);
     });
     if (hit) {
       id = hit.id; data = hit.data();
@@ -234,26 +225,26 @@ exports.resolveProfile = onCall(async (req) => {
     }
   }
 
-  // 4) By email.
+  // 3) By email.
   if (!id && token.email) {
     const s = await users.where('email', '==', String(token.email).toLowerCase()).limit(1).get();
-    if (!s.empty) {
-      const u = s.docs[0].data();
-      if (!u.authUid || u.authUid === uid) {
-        id = s.docs[0].id; data = u;
-        if (data.authUid !== uid) { await users.doc(id).update({ authUid: uid }); data.authUid = uid; }
-      }
+    if (!s.empty && (!s.docs[0].data().authUid || s.docs[0].data().authUid === uid)) {
+      id = s.docs[0].id; data = s.docs[0].data();
+      if (data.authUid !== uid) { await users.doc(id).update({ authUid: uid }); data.authUid = uid; }
     }
   }
 
   if (!id) return { found: false };
   if (data.isActive === false) return { found: true, isActive: false };
 
-  // Create / migrate / refresh the mirror (admin SDK — bypasses rules).
-  await db.collection('accounts').doc(uid).set({
-    userId: id,
+  // Stamp role + channels onto the auth token (read directly by security rules).
+  const channels = data.role === 'vendor'
+    ? (data.channelId ? [data.channelId] : [])
+    : (data.assignedChannels || []);
+  await admin.auth().setCustomUserClaims(uid, {
     role: data.role,
-    channelId: data.channelId || null,
+    userId: id,
+    channels,
     isActive: data.isActive !== false,
   });
 
