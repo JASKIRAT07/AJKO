@@ -40,7 +40,8 @@ function useLiveQuery(buildQuery, deps, sortFn) {
   return { data, loading };
 }
 
-// Orders, role-scoped. Vendors see their channel's orders; team/admin see all.
+// Orders, role-scoped. Vendor → their one channel. Team → only the channels
+// they've been added to. Admin → everything.
 export function useOrders(profile) {
   return useLiveQuery(() => {
     if (!profile) return null;
@@ -49,8 +50,13 @@ export function useOrders(profile) {
       if (!profile.channelId) return null;
       return query(base, where('channelId', '==', profile.channelId));
     }
-    return query(base, orderBy('createdAt', 'desc'));
-  }, [profile?.id, profile?.role, profile?.channelId], (a, b) => ms(b.createdAt) - ms(a.createdAt));
+    if (profile.role === 'team') {
+      const chs = profile.assignedChannels || [];
+      if (!chs.length) return null;
+      return query(base, where('channelId', 'in', chs.slice(0, 30)));
+    }
+    return query(base, orderBy('createdAt', 'desc')); // admin
+  }, [profile?.id, profile?.role, profile?.channelId, (profile?.assignedChannels || []).join(',')], (a, b) => ms(b.createdAt) - ms(a.createdAt));
 }
 
 export function useUsers() {

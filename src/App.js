@@ -34,6 +34,10 @@ function Shell() {
     );
   }
 
+  // Forgot-password reset (flag set after OTP) forces the set-password screen.
+  if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ajko_set_pw') === '1') {
+    return <SetPassword />;
+  }
   if (profile.role !== 'admin' && profile.passwordSet !== true && profile.setupComplete !== true) {
     return <SetPassword />;
   }

@@ -20,8 +20,10 @@ async function compressImage(file, maxDim = 1280, quality = 0.7) {
   }
 }
 
-export async function uploadFile(file, folder = 'orders') {
-  const toSend = file.type?.startsWith('image') ? await compressImage(file) : file;
+export async function uploadFile(file, folder = 'orders', opts = {}) {
+  const toSend = file.type?.startsWith('image')
+    ? await compressImage(file, opts.maxDim || 1280, opts.quality || 0.7)
+    : file;
   const safe = (toSend.name || 'file').replace(/[^\w.-]/g, '_');
   const path = `${folder}/${Date.now()}_${Math.round(Math.random() * 1e6)}_${safe}`;
   const r = ref(storage, path);

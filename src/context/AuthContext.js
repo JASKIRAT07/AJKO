@@ -42,9 +42,18 @@ export function AuthProvider({ children }) {
 
         if (!p && fbUser.phoneNumber) {
           const want = last10(fbUser.phoneNumber);
-          p = docs.find((u) => want && last10(u.phone) === want);
-          if (p && p.authUid !== fbUser.uid) {
-            try { await updateDoc(doc(db, 'users', p.id), { authUid: fbUser.uid }); } catch { /* best effort */ }
+          const cand = docs.find((u) => want && last10(u.phone) === want);
+          if (cand) {
+            if (!cand.authUid) {
+              // first-time link of an unlinked member to this phone identity
+              try { await updateDoc(doc(db, 'users', cand.id), { authUid: fbUser.uid }); } catch { /* best effort */ }
+              p = cand;
+            } else if (cand.authUid === fbUser.uid) {
+              p = cand;
+            } else {
+              // already linked to a different (e.g. email) account — don't hijack
+              p = null;
+            }
           }
         }
 

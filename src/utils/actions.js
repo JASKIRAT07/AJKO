@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { STAGE_ORDER, stageInfo, formatAppOrderNo } from './format';
+import { normalizePhone } from './auth';
 
 // Move an order to a specific stage, recording a full audit entry.
 export async function setStage(order, toStage, actor) {
@@ -139,9 +140,11 @@ export async function updateChannel(id, data) {
   await updateDoc(doc(db, 'channels', id), data);
 }
 
-// Admin: edit a member's details. Handles vendor channel reassignment + code change.
-export async function updateMember(user, { name, phone, specialty, channelId, code }) {
-  const patch = { name, phone, specialty: specialty || '' };
+// Admin: edit a member's details. Handles vendor channel reassignment (single)
+// and team channel membership (multiple).
+export async function updateMember(user, { name, phone, specialty, channelId, code, channelIds }) {
+  const patch = { name, phone: normalizePhone(phone), specialty: specialty || '' };
+
   if (user.role === 'vendor' && channelId && channelId !== user.channelId) {
     patch.channelId = channelId;
     patch.assignedChannels = [channelId];
@@ -149,29 +152,54 @@ export async function updateMember(user, { name, phone, specialty, channelId, co
     if (user.channelId) await removeUserFromChannel(user.channelId, user.id);
     await addUserToChannel(channelId, user.id);
   }
+
+  if (user.role === 'team' && Array.isArray(channelIds)) {
+    const prev = user.assignedChannels || [];
+    patch.assignedChannels = channelIds;
+    for (const cid of channelIds) if (!prev.includes(cid)) await addUserToChannel(cid, user.id);
+    for (const cid of prev) if (!channelIds.includes(cid)) await removeUserFromChannel(cid, user.id);
+  }
+
   await updateDoc(doc(db, 'users', user.id), patch);
 }
 
 // Admin: delete a member record. (Their Firebase Auth login, if any, must be
 // removed separately via the Admin SDK — not possible from the browser.)
 export async function deleteMember(user) {
-  if (user.role === 'vendor' && user.channelId) {
-    await removeUserFromChannel(user.channelId, user.id);
-  }
+  const cids = new Set([...(user.assignedChannels || []), ...(user.channelId ? [user.channelId] : [])]);
+  for (const cid of cids) await removeUserFromChannel(cid, user.id);
   await deleteDoc(doc(db, 'users', user.id));
 }
 
-// Admin: delete a channel and all its orders + messages.
+// Admin: delete a channel and its orders + messages. Vendors (who belong only
+// to this channel) are removed too; team members just lose this channel.
 export async function deleteChannel(channelId) {
-  const [orders, messages] = await Promise.all([
+  const [orders, messages, members] = await Promise.all([
     getDocs(query(collection(db, 'orders'), where('channelId', '==', channelId))),
     getDocs(query(collection(db, 'messages'), where('channelId', '==', channelId))),
+    getDocs(query(collection(db, 'users'), where('assignedChannels', 'array-contains', channelId))),
   ]);
   const batch = writeBatch(db);
   orders.docs.forEach((d) => batch.delete(d.ref));
   messages.docs.forEach((d) => batch.delete(d.ref));
+  members.docs.forEach((d) => {
+    const u = d.data();
+    if (u.role === 'vendor') batch.delete(d.ref);
+    else batch.update(d.ref, { assignedChannels: (u.assignedChannels || []).filter((x) => x !== channelId) });
+  });
   batch.delete(doc(db, 'channels', channelId));
   await batch.commit();
+}
+
+// Admin: add/remove a team member to/from a channel.
+export async function setTeamChannelMembership(user, channelId, add) {
+  if (add) {
+    await updateDoc(doc(db, 'channels', channelId), { memberIds: arrayUnion(user.id) });
+    await updateDoc(doc(db, 'users', user.id), { assignedChannels: arrayUnion(channelId) });
+  } else {
+    await updateDoc(doc(db, 'channels', channelId), { memberIds: arrayRemove(user.id) });
+    await updateDoc(doc(db, 'users', user.id), { assignedChannels: arrayRemove(channelId) });
+  }
 }
 
 // Admin: delete an order and its messages.

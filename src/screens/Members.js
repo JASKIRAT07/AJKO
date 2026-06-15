@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUsers, useChannels, useOrders, decorateOrders } from '../hooks/useCollections';
 import { createMemberRecord, nextVendorCode, nextTeamCode, nextAdminCode } from '../utils/auth';
 import {
-  createChannel, updateChannel, deleteChannel, updateMember, deleteMember,
+  createChannel, updateChannel, deleteChannel, updateMember, deleteMember, setTeamChannelMembership,
 } from '../utils/actions';
 import { initials } from '../utils/format';
 import { RoleBadge } from '../components/Badges';
@@ -56,8 +56,21 @@ export default function Members() {
     };
   };
 
-  const toggleActive = (u) => updateDoc(doc(db, 'users', u.id), { isActive: u.isActive === false });
+  const activeAdmins = users.filter((u) => u.role === 'admin' && u.isActive !== false);
+  // Guards so you can't lock everyone out of the admin role.
+  const adminActionBlocked = (u, action) => {
+    if (u.role !== 'admin') return false;
+    if (u.id === profile.id) { alert(`You can't ${action} your own admin account.`); return true; }
+    if (u.isActive !== false && activeAdmins.length <= 1) { alert('At least one active admin must remain.'); return true; }
+    return false;
+  };
+
+  const toggleActive = (u) => {
+    if (u.isActive !== false && adminActionBlocked(u, 'deactivate')) return;
+    updateDoc(doc(db, 'users', u.id), { isActive: u.isActive === false });
+  };
   const removeMember = async (u) => {
+    if (adminActionBlocked(u, 'delete')) return;
     if (!window.confirm(`Delete ${u.name} (${u.code})? This removes their record permanently. (Their login, if any, must be removed from the Firebase console.)`)) return;
     await deleteMember(u);
   };
@@ -102,7 +115,7 @@ export default function Members() {
                       <span style={{ fontWeight: 800 }}>{u.name}</span>
                       <RoleBadge role={u.role} />
                     </div>
-                    {!isAdminRow && <span className="badge" style={{ background: inactive ? '#f3f0ec' : '#ecfdf3', color: inactive ? 'var(--ink-faint)' : 'var(--green)' }}>{inactive ? 'Inactive' : 'Active'}</span>}
+                    <span className="badge" style={{ background: inactive ? '#f3f0ec' : '#ecfdf3', color: inactive ? 'var(--ink-faint)' : 'var(--green)' }}>{inactive ? 'Inactive' : 'Active'}</span>
                   </div>
                   <div className="faint" style={{ fontSize: 12, marginTop: 2 }}>
                     {u.code}{u.specialty ? ` · ${u.specialty}` : (isVendor ? ' · Karigar' : isAdminRow ? ' · Owner' : ' · Team')}
@@ -117,13 +130,11 @@ export default function Members() {
                   <span className="chip spec-chip" style={{ color: 'var(--green)' }}>{os.done} done</span>
                 </div>
               )}
-              {!isAdminRow && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                  <button className="btn btn-ghost" style={{ flex: 1, padding: '9px' }} onClick={() => setEditUser(u)}>Edit</button>
-                  <button className={inactive ? 'btn btn-primary' : 'btn btn-ghost'} style={{ flex: 1, padding: '9px' }} onClick={() => toggleActive(u)}>{inactive ? 'Activate' : 'Deactivate'}</button>
-                  <button className="btn btn-danger" style={{ flex: '0 0 auto', padding: '9px 12px' }} onClick={() => removeMember(u)}>Delete</button>
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="btn btn-ghost" style={{ flex: 1, padding: '9px' }} onClick={() => setEditUser(u)}>Edit</button>
+                <button className={inactive ? 'btn btn-primary' : 'btn btn-ghost'} style={{ flex: 1, padding: '9px' }} onClick={() => toggleActive(u)}>{inactive ? 'Activate' : 'Deactivate'}</button>
+                <button className="btn btn-danger" style={{ flex: '0 0 auto', padding: '9px 12px' }} onClick={() => removeMember(u)}>Delete</button>
+              </div>
             </div>
           );
         })}
@@ -144,13 +155,15 @@ function AddMemberModal({ users, channels, onClose }) {
   const [phone, setPhone] = useState('');
   const [specialty, setSpecialty] = useState('');
   const [channelId, setChannelId] = useState('');
+  const [channelIds, setChannelIds] = useState([]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [createdCode, setCreatedCode] = useState('');
+  const toggleCid = (cid) => setChannelIds((prev) => (prev.includes(cid) ? prev.filter((x) => x !== cid) : [...prev, cid]));
 
   const channel = channels.find((c) => c.id === channelId);
   let previewCode = '—';
-  if (role === 'admin') previewCode = nextAdminCode(users.filter((u) => u.role === 'admin').map((u) => u.code));
+  if (role === 'admin') previewCode = nextAdminCode(users.filter((u) => u.role === 'admin').length);
   else if (role === 'team') previewCode = nextTeamCode(users.filter((u) => u.role === 'team').map((u) => u.code));
   else if (channel) previewCode = nextVendorCode(channel.code, users.filter((u) => u.role === 'vendor' && u.channelId === channelId).map((u) => u.code));
   const valid = name && phone && (role !== 'vendor' || channelId);
@@ -159,7 +172,7 @@ function AddMemberModal({ users, channels, onClose }) {
     setBusy(true);
     try {
       const code = previewCode;
-      await createMemberRecord({ name, phone, role, code, specialty, channelId: role === 'vendor' ? channelId : null });
+      await createMemberRecord({ name, phone, role, code, specialty, channelId: role === 'vendor' ? channelId : null, channelIds: role === 'team' ? channelIds : [] });
       setCreatedCode(code);
       setDone(true);
     } catch (e) { alert(e.message || 'Failed to add member'); }
@@ -195,6 +208,18 @@ function AddMemberModal({ users, channels, onClose }) {
                   </select>}
             </div>
           )}
+          {role === 'team' && (
+            <div className="field"><label>Channels <span className="faint" style={{ fontWeight: 500 }}>(select one or more)</span></label>
+              {channels.length === 0
+                ? <div className="muted" style={{ fontSize: 13 }}>No channels yet — create one from the <b>Channels</b> button first.</div>
+                : channels.map((c) => (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
+                    <input type="checkbox" checked={channelIds.includes(c.id)} onChange={() => toggleCid(c.id)} />
+                    <span>{c.code}{c.name && c.name !== c.code ? ` · ${c.name}` : ''}</span>
+                  </label>
+                ))}
+            </div>
+          )}
           <div className="field"><label>Name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></div>
           <div className="field"><label>Phone</label><input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="98765 43210" /></div>
           <div className="field"><label>{role === 'vendor' ? 'Specialty' : 'Designation'}</label><input className="input" value={specialty} onChange={(e) => setSpecialty(e.target.value)} placeholder={role === 'vendor' ? 'e.g. Karigar, Polish' : 'e.g. Sales'} /></div>
@@ -212,11 +237,14 @@ function AddMemberModal({ users, channels, onClose }) {
 
 function EditMemberModal({ user, users, channels, onClose }) {
   const isVendor = user.role === 'vendor';
+  const isTeam = user.role === 'team';
   const [name, setName] = useState(user.name || '');
   const [phone, setPhone] = useState(user.phone || '');
   const [specialty, setSpecialty] = useState(user.specialty || '');
   const [channelId, setChannelId] = useState(user.channelId || '');
+  const [channelIds, setChannelIds] = useState(user.assignedChannels || []);
   const [busy, setBusy] = useState(false);
+  const toggleCid = (cid) => setChannelIds((prev) => (prev.includes(cid) ? prev.filter((x) => x !== cid) : [...prev, cid]));
 
   const channelChanged = isVendor && channelId && channelId !== user.channelId;
   const newChannel = channels.find((c) => c.id === channelId);
@@ -227,7 +255,12 @@ function EditMemberModal({ user, users, channels, onClose }) {
   const save = async () => {
     setBusy(true);
     try {
-      await updateMember(user, { name, phone, specialty, channelId: isVendor ? channelId : null, code: channelChanged ? newCode : user.code });
+      await updateMember(user, {
+        name, phone, specialty,
+        channelId: isVendor ? channelId : null,
+        code: channelChanged ? newCode : user.code,
+        channelIds: isTeam ? channelIds : undefined,
+      });
       onClose();
     } catch (e) { alert(e.message || 'Failed to update'); }
     finally { setBusy(false); }
@@ -248,6 +281,16 @@ function EditMemberModal({ user, users, channels, onClose }) {
             {channelChanged && <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>Code will change to <b>{newCode}</b></div>}
           </div>
         )}
+        {isTeam && (
+          <div className="field"><label>Channels <span className="faint" style={{ fontWeight: 500 }}>(select one or more)</span></label>
+            {channels.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>No channels yet.</div> : channels.map((c) => (
+              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
+                <input type="checkbox" checked={channelIds.includes(c.id)} onChange={() => toggleCid(c.id)} />
+                <span>{c.code}{c.name && c.name !== c.code ? ` · ${c.name}` : ''}</span>
+              </label>
+            ))}
+          </div>
+        )}
         <button className="btn btn-primary btn-block" disabled={busy || !name || !phone} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button>
         <button className="btn btn-ghost btn-block" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>
       </div>
@@ -262,6 +305,9 @@ function ChannelsModal({ channels, users, orders, onClose }) {
   const [err, setErr] = useState('');
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState('');
+  const [manageId, setManageId] = useState(null);
+
+  const teamMembers = users.filter((u) => u.role === 'team');
 
   const add = async () => {
     setErr(''); setBusy(true);
@@ -274,10 +320,10 @@ function ChannelsModal({ channels, users, orders, onClose }) {
 
   const remove = async (c) => {
     const vCount = users.filter((u) => u.role === 'vendor' && u.channelId === c.id).length;
-    if (vCount > 0) { alert(`Remove or reassign this channel's ${vCount} vendor(s) before deleting it.`); return; }
     const oCount = orders.filter((o) => o.channelId === c.id).length;
-    if (!window.confirm(`Delete channel ${c.code}? This permanently removes its ${oCount} order(s) and all messages.`)) return;
-    await deleteChannel(c.id);
+    if (!window.confirm(`Delete channel ${c.code}? This permanently removes its ${oCount} order(s), all messages${vCount ? `, and ${vCount} vendor(s)` : ''}. This cannot be undone.`)) return;
+    try { await deleteChannel(c.id); }
+    catch (e) { alert(`Delete failed: ${e.code || e.message}`); }
   };
 
   return (
@@ -304,6 +350,9 @@ function ChannelsModal({ channels, users, orders, onClose }) {
                   <div style={{ fontWeight: 700 }}>{c.code}{c.name && c.name !== c.code ? <span className="faint" style={{ fontWeight: 500 }}> · {c.name}</span> : null}</div>
                   <div className="faint" style={{ fontSize: 12 }}>{vCount} vendor{vCount === 1 ? '' : 's'}</div>
                 </div>
+              </div>
+              <div style={{ display: 'flex', gap: 14, marginTop: 10 }}>
+                <button className="link" onClick={() => { setManageId(manageId === c.id ? null : c.id); }}>{manageId === c.id ? 'Hide team' : 'Team'}</button>
                 <button className="link" onClick={() => { setEditId(c.id); setEditName(c.name || ''); }}>Rename</button>
                 <button className="link" style={{ color: 'var(--red)' }} onClick={() => remove(c)}>Delete</button>
               </div>
@@ -311,6 +360,20 @@ function ChannelsModal({ channels, users, orders, onClose }) {
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="New name" />
                   <button className="btn btn-primary" style={{ flex: '0 0 auto' }} onClick={() => saveName(c)}>Save</button>
+                </div>
+              )}
+              {manageId === c.id && (
+                <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 10 }}>
+                  <div className="faint" style={{ fontSize: 12, marginBottom: 6 }}>Team members in this channel (admins are always in; vendors are fixed to their channel):</div>
+                  {teamMembers.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>No team members yet.</div> : teamMembers.map((tm) => {
+                    const inCh = (tm.assignedChannels || []).includes(c.id);
+                    return (
+                      <label key={tm.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
+                        <input type="checkbox" checked={inCh} onChange={() => setTeamChannelMembership(tm, c.id, !inCh)} />
+                        <span>{tm.name} <span className="faint">· {tm.code}</span></span>
+                      </label>
+                    );
+                  })}
                 </div>
               )}
             </div>

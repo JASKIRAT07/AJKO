@@ -12,6 +12,7 @@ import {
   EmailAuthProvider,
   linkWithCredential,
   updatePassword,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
   collection, doc, updateDoc, addDoc, serverTimestamp, arrayUnion, getDocs, query, where,
@@ -88,6 +89,11 @@ export async function passwordLogin(loginId, password) {
   return signInWithEmailAndPassword(auth, email, password);
 }
 
+// Email-based password reset (for email accounts like the admin).
+export async function sendResetEmail(email) {
+  return sendPasswordResetEmail(auth, String(email).trim().toLowerCase());
+}
+
 // Returns a confirmationResult to be used with confirmOtp().
 export async function startPhoneOtp(loginId) {
   const user = await findUserByLoginId(loginId);
@@ -129,24 +135,29 @@ export async function resetPasswordAfterOtp(newPassword) {
 }
 
 // Admin: create a member record (no auth account yet; created on first login).
-// Vendors must be linked to a channel; they are added to that channel's memberIds.
-export async function createMemberRecord({ name, phone, email, role, code, specialty, channelId = null }) {
+// Vendors → exactly one channel. Team → any number of channels. Admins → none.
+export async function createMemberRecord({ name, phone, email, role, code, specialty, channelId = null, channelIds = [] }) {
+  const channels = role === 'vendor'
+    ? (channelId ? [channelId] : [])
+    : (role === 'team' ? (channelIds || []) : []);
   const ref = await addDoc(collection(db, 'users'), {
     name,
     phone: normalizePhone(phone),
-    email: email ? email.toLowerCase() : loginIdToEmail(phone),
+    // Phone-only members don't get a stored email. Password login still works
+    // because it derives the login email from the phone on the fly.
+    email: email ? email.toLowerCase() : null,
     role,
     code,
     specialty: specialty || '',
     channelId: role === 'vendor' ? channelId : null,
-    assignedChannels: channelId ? [channelId] : [],
+    assignedChannels: channels,
     isActive: true,
     passwordSet: false,
     authUid: null,
     createdAt: serverTimestamp(),
   });
-  if (role === 'vendor' && channelId) {
-    await updateDoc(doc(db, 'channels', channelId), { memberIds: arrayUnion(ref.id) });
+  for (const cid of channels) {
+    await updateDoc(doc(db, 'channels', cid), { memberIds: arrayUnion(ref.id) });
   }
   return ref;
 }
@@ -190,7 +201,8 @@ export function nextTeamCode(existingCodes = []) {
   return nextSeqCode('TM', existingCodes);
 }
 
-// Admin codes are store-wide, e.g. ADM-01.
-export function nextAdminCode(existingCodes = []) {
-  return nextSeqCode('ADM', existingCodes);
+// Admin codes are store-wide. The first (bootstrap) admin is "ADMIN", so the
+// next created admins start at ADM-02. Pass the current admin count.
+export function nextAdminCode(existingAdminCount = 0) {
+  return `ADM-${String((existingAdminCount || 0) + 1).padStart(2, '0')}`;
 }

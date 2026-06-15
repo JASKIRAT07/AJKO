@@ -22,7 +22,7 @@ const blank = {
 export default function CreateOrder() {
   const { id } = useParams();
   const editing = Boolean(id);
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
   const nav = useNavigate();
   const [params] = useSearchParams();
   const { data: users } = useUsers();
@@ -154,9 +154,13 @@ export default function CreateOrder() {
       <div className="screen" style={{ paddingBottom: 110 }}>
         {noChannels && (
           <div className="card glow-orange" style={{ marginBottom: 14 }}>
-            <div style={{ fontWeight: 700 }}>No channels yet</div>
-            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Create a vendor channel first, then add vendors to it.</div>
-            <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={() => nav('/members')}>Go to Members</button>
+            <div style={{ fontWeight: 700 }}>No channels available</div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+              {isAdmin
+                ? 'Create a vendor channel first (Members → Channels), then add vendors to it.'
+                : 'You haven’t been added to any channel yet. Ask your admin to add you to a channel.'}
+            </div>
+            {isAdmin && <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={() => nav('/members')}>Go to Members</button>}
           </div>
         )}
 

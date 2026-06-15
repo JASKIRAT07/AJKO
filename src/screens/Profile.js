@@ -28,7 +28,7 @@ export default function Profile() {
           <div className="section-title" style={{ marginTop: 0 }}>Account</div>
           <InfoRow k="Name" v={profile.name} />
           {profile.phone && <InfoRow k="Phone" v={profile.phone} />}
-          {profile.email && !isVendor && <InfoRow k="Email" v={profile.email} />}
+          {profile.email && !profile.email.endsWith('@ajko.app') && <InfoRow k="Email" v={profile.email} />}
           <InfoRow k="Code" v={profile.code} />
         </div>
 

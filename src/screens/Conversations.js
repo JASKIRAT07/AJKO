@@ -75,7 +75,8 @@ export default function Conversations() {
     if (!file || !channelId) return;
     setUploading(true);
     try {
-      const { url, type } = await uploadFile(file, 'chat');
+      // Smaller/faster for chat than order media.
+      const { url, type } = await uploadFile(file, 'chat', { maxDim: 1000, quality: 0.55 });
       await sendMessage({ channelId, sender: profile, content: url, type });
     } catch (err) { alert('Upload failed. Check your connection.'); }
     finally { setUploading(false); }

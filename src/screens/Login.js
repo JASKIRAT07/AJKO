@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   passwordLogin, startPhoneOtp, confirmOtp,
-  findUserByLoginId, bootstrapFirstAdmin, adminExists,
+  findUserByLoginId, bootstrapFirstAdmin, adminExists, sendResetEmail,
 } from '../utils/auth';
 import { IcDiamond } from '../components/Icons';
 
@@ -42,6 +42,12 @@ export default function Login() {
   const sendOtp = async () => {
     setErr(''); setBusy(true);
     try {
+      // Email accounts (e.g. admin) reset via an email link, not phone OTP.
+      if (resetFlow && loginId.includes('@')) {
+        await sendResetEmail(loginId);
+        setStep('emailsent');
+        return;
+      }
       const u = await findUserByLoginId(loginId);
       if (!u) throw new Error('No account found. Ask your admin to add you first.');
       const { confirmation: c } = await startPhoneOtp(loginId);
@@ -61,8 +67,9 @@ export default function Login() {
     setErr(''); setBusy(true);
     try {
       await confirmOtp(confirmation, otp.join(''));
-      // Signed in now. AuthContext resolves the profile by phone and the app
-      // routes to the home screen (or the set-password step) automatically.
+      // Forgot-password: force the set-password screen after sign-in (the user
+      // already has a password, so it won't appear on its own).
+      if (resetFlow) sessionStorage.setItem('ajko_set_pw', '1');
       setStep('signingin');
     } catch (e) {
       setErr(friendly(e));
@@ -82,11 +89,14 @@ export default function Login() {
           <p className="muted" style={{ margin: 0 }}>Jewelry orders, handled.</p>
         </div>
 
-        {!showBootstrap && (
+        {!showBootstrap && !resetFlow && (
           <div className="toggle" style={{ alignSelf: 'center', marginBottom: 22 }}>
             <button className={mode === MODES.SIGNIN ? 'on' : ''} onClick={() => { setMode(MODES.SIGNIN); reset(); setResetFlow(false); }}>Sign in</button>
             <button className={mode === MODES.SETUP ? 'on' : ''} onClick={() => { setMode(MODES.SETUP); reset(); setResetFlow(false); }}>First time setup</button>
           </div>
+        )}
+        {!showBootstrap && resetFlow && (
+          <h3 style={{ textAlign: 'center', marginBottom: 18 }}>Reset password</h3>
         )}
 
         <div className="card" style={{ padding: 20 }}>
@@ -113,17 +123,29 @@ export default function Login() {
           ) : (
             <>
               <p className="muted" style={{ marginTop: 0, fontSize: 14 }}>
-                {resetFlow ? 'Reset your password with an OTP sent to your phone.' : 'Verify your phone to set your password for the first time.'}
+                {resetFlow ? 'Enter your phone for an OTP, or your email for a reset link.' : 'Verify your phone to set your password for the first time.'}
               </p>
               {step === 'id' && (
                 <>
                   <div className="field">
-                    <label>Phone number</label>
-                    <input className="input" type="tel" inputMode="tel" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="98765 43210" />
+                    <label>{resetFlow ? 'Phone or email' : 'Phone number'}</label>
+                    <input className="input" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder={resetFlow ? '98765 43210 or you@store.com' : '98765 43210'} />
                   </div>
                   {err && <p style={{ color: 'var(--red)', fontSize: 13 }}>{err}</p>}
-                  <button className="btn btn-primary btn-block" disabled={busy} onClick={sendOtp}>{busy ? 'Sending…' : 'Send OTP'}</button>
+                  <button className="btn btn-primary btn-block" disabled={busy} onClick={sendOtp}>{busy ? 'Sending…' : (resetFlow && loginId.includes('@') ? 'Send reset link' : 'Send OTP')}</button>
+                  {resetFlow && (
+                    <p style={{ textAlign: 'center', marginTop: 14, marginBottom: 0 }}>
+                      <span className="link" onClick={() => { setMode(MODES.SIGNIN); reset(); setResetFlow(false); }}>Back to sign in</span>
+                    </p>
+                  )}
                 </>
+              )}
+              {step === 'emailsent' && (
+                <div className="center-col" style={{ padding: '8px 0' }}>
+                  <div style={{ fontSize: 40 }}>📧</div>
+                  <p className="muted" style={{ textAlign: 'center', marginTop: 8 }}>Password reset link sent to <b>{loginId}</b>. Check your inbox (and spam), set a new password, then sign in.</p>
+                  <button className="btn btn-primary btn-block" onClick={() => { setMode(MODES.SIGNIN); reset(); setResetFlow(false); }}>Back to sign in</button>
+                </div>
               )}
               {step === 'otp' && (
                 <>
