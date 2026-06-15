@@ -1,20 +1,16 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import {
-  collection, onSnapshot, doc, updateDoc, setDoc,
-} from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '../firebase';
 import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
-
-const last10 = (v) => String(v || '').replace(/\D/g, '').slice(-10);
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const mirrorSig = useRef('');
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -22,74 +18,58 @@ export function AuthProvider({ children }) {
       if (!u) {
         setProfile(null);
         setLoading(false);
-        mirrorSig.current = '';
       }
     });
     return unsub;
   }, []);
 
-  // Resolve the profile (by authUid, falling back to phone), enforce deactivation,
-  // and maintain the rules-validated accounts/{uid} mirror BEFORE unblocking the
-  // app, so role/channel-scoped queries succeed on first render.
+  // Establish the user context via the resolveProfile Cloud Function (it finds
+  // the user by phone/email/authUid, links the authUid, and creates/migrates
+  // the accounts mirror — all server-side, so security rules never block it).
+  // We do NOT read Firestore directly until the context exists.
   useEffect(() => {
     if (!fbUser) return undefined;
+    let cancelled = false;
+    let unsubDoc = null;
     setLoading(true);
-    const unsub = onSnapshot(
-      collection(db, 'users'),
-      async (snap) => {
-        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        let p = docs.find((u) => u.authUid === fbUser.uid);
 
-        if (!p && fbUser.phoneNumber) {
-          const want = last10(fbUser.phoneNumber);
-          const cand = docs.find((u) => want && last10(u.phone) === want);
-          if (cand) {
-            if (!cand.authUid) {
-              // first-time link of an unlinked member to this phone identity
-              try { await updateDoc(doc(db, 'users', cand.id), { authUid: fbUser.uid }); } catch { /* best effort */ }
-              p = cand;
-            } else if (cand.authUid === fbUser.uid) {
-              p = cand;
-            } else {
-              // already linked to a different (e.g. email) account — don't hijack
-              p = null;
-            }
-          }
-        }
+    (async () => {
+      let res;
+      try {
+        res = await httpsCallable(functions, 'resolveProfile')();
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('resolveProfile failed', e);
+        if (!cancelled) { setProfile(null); setLoading(false); }
+        return;
+      }
+      if (cancelled) return;
 
-        // Deactivated accounts cannot use the app on ANY login path.
-        if (p && p.isActive === false) {
-          await signOut(auth);
-          setProfile(null);
-          setLoading(false);
-          return;
-        }
+      const d = res?.data || {};
+      if (!d.found) { setProfile(null); setLoading(false); return; }
+      if (d.isActive === false) { await signOut(auth); setProfile(null); setLoading(false); return; }
 
-        if (p) {
-          const sig = `${p.id}|${p.role}|${p.channelId || ''}|${p.isActive !== false}`;
-          if (sig !== mirrorSig.current) {
-            try {
-              await setDoc(doc(db, 'accounts', fbUser.uid), {
-                userId: p.id,
-                role: p.role,
-                channelId: p.channelId || null,
-                isActive: p.isActive !== false,
-              });
-              mirrorSig.current = sig;
-            } catch (e) {
-              // eslint-disable-next-line no-console
-              console.error('account mirror write failed', e);
-            }
-          }
-          enablePush(p.id);
-        }
+      const p = d.profile;
+      setProfile(p);
+      setLoading(false);
+      enablePush(p.id);
 
-        setProfile(p || null);
-        setLoading(false);
-      },
-      (err) => { console.error('users listener error', err); setLoading(false); }
-    );
-    return unsub;
+      // Live updates on the single profile doc (allowed once signed in).
+      unsubDoc = onSnapshot(doc(db, 'users', p.id), async (snap) => {
+        if (!snap.exists()) return;
+        const np = { id: snap.id, ...snap.data() };
+        if (np.isActive === false) { await signOut(auth); return; }
+        setProfile(np);
+        // Keep the mirror in sync if role/channel/active changed.
+        try {
+          await setDoc(doc(db, 'accounts', fbUser.uid), {
+            userId: np.id, role: np.role, channelId: np.channelId || null, isActive: np.isActive !== false,
+          });
+        } catch { /* best effort */ }
+      });
+    })();
+
+    return () => { cancelled = true; if (unsubDoc) unsubDoc(); };
   }, [fbUser]);
 
   const value = {

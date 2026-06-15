@@ -13,7 +13,7 @@
  */
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onCall } = require('firebase-functions/v2/https');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -190,4 +190,72 @@ exports.lookupLogin = onCall(async (req) => {
 exports.checkAdminExists = onCall(async () => {
   const snap = await db.collection('users').where('role', '==', 'admin').limit(1).get();
   return { exists: !snap.empty };
+});
+
+// Called by the app AFTER auth (OTP or email/password). Finds the caller's user
+// doc, links their authUid, (re)creates the accounts mirror — all with admin
+// privileges so security rules never block it — and returns the full profile.
+// This is the single source of truth for establishing the user context.
+exports.resolveProfile = onCall(async (req) => {
+  const auth = req.auth;
+  if (!auth) throw new HttpsError('unauthenticated', 'Not signed in.');
+  const uid = auth.uid;
+  const token = auth.token || {};
+  const users = db.collection('users');
+  const last10 = (v) => String(v || '').replace(/\D/g, '').slice(-10);
+
+  let id = null;
+  let data = null;
+
+  // 1) Existing accounts mirror → fast path.
+  const mirror = await db.collection('accounts').doc(uid).get();
+  if (mirror.exists && mirror.data().userId) {
+    const ud = await users.doc(mirror.data().userId).get();
+    if (ud.exists && ud.data().authUid === uid) { id = ud.id; data = ud.data(); }
+  }
+
+  // 2) By authUid.
+  if (!id) {
+    const s = await users.where('authUid', '==', uid).limit(1).get();
+    if (!s.empty) { id = s.docs[0].id; data = s.docs[0].data(); }
+  }
+
+  // 3) By phone (OTP) — only an unlinked or own doc, never hijack another's.
+  if (!id && token.phone_number) {
+    const want = last10(token.phone_number);
+    const all = await users.get();
+    const hit = all.docs.find((d) => {
+      const u = d.data();
+      return last10(u.phone) === want && want && (!u.authUid || u.authUid === uid);
+    });
+    if (hit) {
+      id = hit.id; data = hit.data();
+      if (data.authUid !== uid) { await users.doc(id).update({ authUid: uid }); data.authUid = uid; }
+    }
+  }
+
+  // 4) By email.
+  if (!id && token.email) {
+    const s = await users.where('email', '==', String(token.email).toLowerCase()).limit(1).get();
+    if (!s.empty) {
+      const u = s.docs[0].data();
+      if (!u.authUid || u.authUid === uid) {
+        id = s.docs[0].id; data = u;
+        if (data.authUid !== uid) { await users.doc(id).update({ authUid: uid }); data.authUid = uid; }
+      }
+    }
+  }
+
+  if (!id) return { found: false };
+  if (data.isActive === false) return { found: true, isActive: false };
+
+  // Create / migrate / refresh the mirror (admin SDK — bypasses rules).
+  await db.collection('accounts').doc(uid).set({
+    userId: id,
+    role: data.role,
+    channelId: data.channelId || null,
+    isActive: data.isActive !== false,
+  });
+
+  return { found: true, isActive: true, profile: { id, ...data } };
 });
