@@ -82,13 +82,24 @@ export function AuthProvider({ children }) {
         const data = d.data();
         if (data.isActive === false) { await signOut(auth); setProfile(null); setLoading(false); return; }
 
-        // Self-heal the authUid link if needed, then guarantee the mirror exists.
+        // Self-heal the authUid link if needed (non-fatal — mirror can also be
+        // authorized by email/phone match).
         if (data.authUid !== fbUser.uid) {
-          await updateDoc(doc(db, 'users', d.id), { authUid: fbUser.uid }).catch((e) => { setAuthError(`link denied: ${e.code || ''} ${e.message || e}`); });
+          await updateDoc(doc(db, 'users', d.id), { authUid: fbUser.uid }).catch((e) => console.error('authUid link failed', e));
         }
-        await setDoc(mirrorRef, {
-          userId: d.id, role: data.role, channelId: data.channelId || null, isActive: data.isActive !== false,
-        }).catch((e) => { setAuthError(`mirror denied: ${e.code || ''} ${e.message || e}`); });
+        // The mirror MUST exist for any screen to read — surface the exact
+        // reason if the rules block it instead of half-logging-in.
+        try {
+          await setDoc(mirrorRef, {
+            userId: d.id, role: data.role, channelId: data.channelId || null, isActive: data.isActive !== false,
+          });
+        } catch (e) {
+          if (!cancelled) {
+            setAuthError(`mirror write blocked: ${e.code || ''} ${e.message || e}`);
+            setProfile(null); setLoading(false);
+          }
+          return;
+        }
         if (cancelled) return;
 
         // Live profile from the single users doc.
