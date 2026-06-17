@@ -13,7 +13,6 @@ import Search from './screens/Search';
 import Profile from './screens/Profile';
 import Settings from './screens/Settings';
 import Members from './screens/Members';
-import SetPassword from './screens/SetPassword';
 import Sidebar from './components/Sidebar';
 import Splash from './components/Splash';
 
@@ -40,13 +39,8 @@ function Shell() {
     );
   }
 
-  // Forgot-password reset (flag set after OTP) forces the set-password screen.
-  if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('ajko_set_pw') === '1') {
-    return <SetPassword />;
-  }
-  if (profile.role !== 'admin' && profile.passwordSet !== true && profile.setupComplete !== true) {
-    return <SetPassword />;
-  }
+  // Vendors/team log in with OTP — no mandatory password step (it was flaky on
+  // phone accounts). Password can be set later from Profile if desired.
 
   return (
     <>
