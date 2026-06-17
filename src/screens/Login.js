@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   passwordLogin, startPhoneOtp, confirmOtp,
-  findUserByLoginId, bootstrapFirstAdmin, adminExists, sendResetEmail,
+  bootstrapFirstAdmin, adminExists, sendResetEmail,
 } from '../utils/auth';
 import { IcDiamond } from '../components/Icons';
 
@@ -48,8 +48,8 @@ export default function Login() {
         setStep('emailsent');
         return;
       }
-      const u = await findUserByLoginId(loginId);
-      if (!u) throw new Error('No account found. Ask your admin to add you first.');
+      // No pre-login Firestore read (that requires sign-in). Send the OTP to the
+      // typed number; membership is verified after sign-in by AuthContext.
       const { confirmation: c } = await startPhoneOtp(loginId);
       setConfirmation(c); setStep('otp');
     } catch (e) {

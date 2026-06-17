@@ -93,12 +93,12 @@ export async function sendResetEmail(email) {
 
 // Returns a confirmationResult to be used with confirmOtp().
 export async function startPhoneOtp(loginId) {
-  const user = await findUserByLoginId(loginId);
-  if (!user) throw new Error('No account found. Ask your admin to add you first.');
-  if (user.isActive === false) throw new Error('This account is inactive. Contact your admin.');
+  // Send the OTP to the typed number directly — no pre-login Firestore read.
+  // Whether the number is a real member is checked after sign-in (AuthContext),
+  // which is where deactivation is enforced too.
   const verifier = createRecaptcha('recaptcha-container');
-  const confirmation = await signInWithPhoneNumber(auth, normalizePhone(user.phone), verifier);
-  return { confirmation, user };
+  const confirmation = await signInWithPhoneNumber(auth, normalizePhone(loginId), verifier);
+  return { confirmation };
 }
 
 export async function confirmOtp(confirmation, code) {
