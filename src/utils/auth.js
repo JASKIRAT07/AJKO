@@ -32,14 +32,11 @@ export function phoneVariants(raw) {
 }
 
 export function normalizePhone(raw) {
-  if (!raw) return '';
-  let p = String(raw).replace(/[^\d+]/g, '');
-  if (!p.startsWith('+')) {
-    // default to India country code
-    p = p.replace(/^0+/, '');
-    p = `+91${p}`;
-  }
-  return p;
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  // India: always store as E.164 +91 + the last 10 digits, so it matches the
+  // Firebase Auth token's phone_number exactly (handles +91 / 0 / 91 / bare).
+  return `+91${digits.slice(-10)}`;
 }
 
 export function loginIdToEmail(id) {

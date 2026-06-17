@@ -32,8 +32,10 @@ service cloud.firestore {
       function src() { return get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data; }
       allow read: if signedIn() && request.auth.uid == uid;
       allow delete: if signedIn() && request.auth.uid == uid;
-      allow write: if signedIn() && request.auth.uid == uid
-        && ownsUser(src())
+      // Create/refresh your OWN mirror, validated against the users doc that is
+      // linked to you (so role/channel can't be forged).
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && src().authUid == request.auth.uid
         && request.resource.data.role == src().role
         && request.resource.data.isActive == src().isActive
         && (src().role != 'vendor' || request.resource.data.channelId == src().channelId);
@@ -43,8 +45,14 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if isAdmin() || (signedIn() && request.resource.data.authUid == request.auth.uid);
       allow update: if isAdmin()
-        // Self-link / self-heal: a user may set their own authUid and edit their
-        // own profile, but never change role/channel/active.
+        // First login: claim your own UNLINKED record (set authUid). The client
+        // only ever links the record matching your verified phone/email.
+        || (resource.data.authUid == null
+            && request.resource.data.authUid == request.auth.uid
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.channelId == resource.data.channelId
+            && request.resource.data.isActive == resource.data.isActive)
+        // Self-heal / profile edit (never change role/channel/active).
         || (ownsUser(resource.data)
             && request.resource.data.authUid == request.auth.uid
             && request.resource.data.role == resource.data.role
