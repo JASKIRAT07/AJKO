@@ -3,6 +3,7 @@ import {
   passwordLogin, startPhoneOtp, confirmOtp,
   bootstrapFirstAdmin, adminExists, sendResetEmail,
 } from '../utils/auth';
+import { AUTH_BUILD } from '../context/AuthContext';
 import { IcDiamond } from '../components/Icons';
 
 const MODES = { SIGNIN: 'signin', SETUP: 'setup' };
@@ -176,6 +177,7 @@ export default function Login() {
             New store? <span className="link" onClick={() => setShowBootstrap(true)}>Set up first admin</span>
           </p>
         )}
+        <p className="faint" style={{ textAlign: 'center', fontSize: 11, marginTop: 16 }}>build {AUTH_BUILD}</p>
       </div>
     </div>
   );
