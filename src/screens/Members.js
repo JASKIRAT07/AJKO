@@ -3,7 +3,10 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useUsers, useChannels, useOrders, decorateOrders } from '../hooks/useCollections';
-import { createMemberRecord, nextVendorCode, nextTeamCode, nextAdminCode } from '../utils/auth';
+import {
+  createMemberRecord, createTeamMember, changeTeamPassword,
+  nextVendorCode, nextTeamCode, nextAdminCode,
+} from '../utils/auth';
 import {
   createChannel, updateChannel, deleteChannel, updateMember, deleteMember, setTeamChannelMembership,
 } from '../utils/actions';
@@ -84,7 +87,7 @@ export default function Members() {
       <div className="screen screen-pad-bottom">
         <div className="card card-tight" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <IcSearch size={18} color="var(--ink-faint)" />
-          <input className="input" style={{ border: 'none', padding: 4 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search members…" />
+          <input className="input" autoComplete="off" style={{ border: 'none', padding: 4 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search members…" />
         </div>
 
         <div className="toggle" style={{ marginBottom: 14, display: 'flex', width: '100%' }}>
@@ -153,6 +156,7 @@ function AddMemberModal({ users, channels, onClose }) {
   const [role, setRole] = useState('vendor');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [specialty, setSpecialty] = useState('');
   const [channelId, setChannelId] = useState('');
   const [channelIds, setChannelIds] = useState([]);
@@ -166,16 +170,22 @@ function AddMemberModal({ users, channels, onClose }) {
   if (role === 'admin') previewCode = nextAdminCode(users.filter((u) => u.role === 'admin').length);
   else if (role === 'team') previewCode = nextTeamCode(users.filter((u) => u.role === 'team').map((u) => u.code));
   else if (channel) previewCode = nextVendorCode(channel.code, users.filter((u) => u.role === 'vendor' && u.channelId === channelId).map((u) => u.code));
-  const valid = name && phone && (role !== 'vendor' || channelId);
+  const valid = role === 'team'
+    ? (name && password.length >= 6)
+    : (name && phone && (role !== 'vendor' || channelId));
 
   const create = async () => {
     setBusy(true);
     try {
       const code = previewCode;
-      await createMemberRecord({ name, phone, role, code, specialty, channelId: role === 'vendor' ? channelId : null, channelIds: role === 'team' ? channelIds : [] });
+      if (role === 'team') {
+        await createTeamMember({ name, code, password, channelIds });
+      } else {
+        await createMemberRecord({ name, phone, role, code, specialty, channelId: role === 'vendor' ? channelId : null, channelIds: [] });
+      }
       setCreatedCode(code);
       setDone(true);
-    } catch (e) { alert(e.message || 'Failed to add member'); }
+    } catch (e) { alert(e.code === 'auth/email-already-in-use' ? 'That team code already has a login. Pick a different code or delete the old member first.' : (e.message || 'Failed to add member')); }
     finally { setBusy(false); }
   };
 
@@ -186,7 +196,11 @@ function AddMemberModal({ users, channels, onClose }) {
           <div className="center-col" style={{ padding: 20 }}>
             <div style={{ fontSize: 44 }}>✅</div>
             <h3>Member created — {createdCode}</h3>
-            <p className="muted" style={{ textAlign: 'center' }}>{name} can now do <b>First time setup</b> with their phone to receive an OTP and set a password.</p>
+            <p className="muted" style={{ textAlign: 'center' }}>
+              {role === 'team'
+                ? <>{name} signs in with their code <b>{createdCode}</b> and the password you just set.</>
+                : <>{name} can now do <b>First time setup</b> with their phone to receive an OTP and set a password.</>}
+            </p>
             <button className="btn btn-primary btn-block" onClick={onClose}>Done</button>
           </div>
         ) : (<>
@@ -220,14 +234,20 @@ function AddMemberModal({ users, channels, onClose }) {
                 ))}
             </div>
           )}
-          <div className="field"><label>Name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></div>
-          <div className="field"><label>Phone</label><input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="98765 43210" /></div>
-          <div className="field"><label>{role === 'vendor' ? 'Specialty' : 'Designation'}</label><input className="input" value={specialty} onChange={(e) => setSpecialty(e.target.value)} placeholder={role === 'vendor' ? 'e.g. Karigar, Polish' : 'e.g. Sales'} /></div>
+          <div className="field"><label>Name</label><input className="input" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></div>
+          {role === 'team' ? (
+            <div className="field"><label>Password <span className="faint" style={{ fontWeight: 500 }}>(min 6 characters)</span></label><input className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Set a login password" /></div>
+          ) : (
+            <>
+              <div className="field"><label>Phone</label><input className="input" autoComplete="off" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="98765 43210" /></div>
+              <div className="field"><label>{role === 'vendor' ? 'Specialty' : 'Designation'}</label><input className="input" autoComplete="off" value={specialty} onChange={(e) => setSpecialty(e.target.value)} placeholder={role === 'vendor' ? 'e.g. Karigar, Polish' : 'e.g. Sales'} /></div>
+            </>
+          )}
           <div className="card card-tight" style={{ background: 'var(--primary-soft)', marginBottom: 14 }}>
             <span className="faint" style={{ fontSize: 12 }}>Auto-generated code</span>
             <div style={{ fontWeight: 800, color: 'var(--primary-dark)', fontSize: 18 }}>{previewCode}</div>
           </div>
-          <button className="btn btn-primary btn-block" disabled={busy || !valid} onClick={create}>{busy ? 'Creating…' : 'Create member & send OTP'}</button>
+          <button className="btn btn-primary btn-block" disabled={busy || !valid} onClick={create}>{busy ? 'Creating…' : (role === 'team' ? 'Create team member' : 'Create member & send OTP')}</button>
           <button className="btn btn-ghost btn-block" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>
         </>)}
       </div>
@@ -270,9 +290,9 @@ function EditMemberModal({ user, users, channels, onClose }) {
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3 style={{ marginTop: 0 }}>Edit {user.code}</h3>
-        <div className="field"><label>Name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
-        <div className="field"><label>Phone</label><input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
-        <div className="field"><label>{isVendor ? 'Specialty' : 'Designation'}</label><input className="input" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></div>
+        <div className="field"><label>Name</label><input className="input" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} /></div>
+        {!isTeam && <div className="field"><label>Phone</label><input className="input" autoComplete="off" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>}
+        {!isTeam && <div className="field"><label>{isVendor ? 'Specialty' : 'Designation'}</label><input className="input" autoComplete="off" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></div>}
         {isVendor && (
           <div className="field"><label>Channel</label>
             <select className="select" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
@@ -291,9 +311,44 @@ function EditMemberModal({ user, users, channels, onClose }) {
             ))}
           </div>
         )}
-        <button className="btn btn-primary btn-block" disabled={busy || !name || !phone} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button>
+        <button className="btn btn-primary btn-block" disabled={busy || !name || (!isTeam && !phone)} onClick={save}>{busy ? 'Saving…' : 'Save changes'}</button>
+        {isTeam && <TeamPasswordReset user={user} />}
         <button className="btn btn-ghost btn-block" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>
       </div>
+    </div>
+  );
+}
+
+// Admin-only: set a brand-new password for a team member (the only way to reset).
+function TeamPasswordReset({ user }) {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const apply = async () => {
+    setBusy(true); setMsg('');
+    try {
+      await changeTeamPassword(user, pw);
+      setMsg(`✓ New password set. ${user.code} can now sign in with it.`);
+      setPw('');
+    } catch (e) {
+      setMsg(e.message || 'Could not change password.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card card-tight" style={{ marginTop: 12, background: 'var(--primary-soft)' }}>
+      <button className="row-between" style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => setOpen((o) => !o)}>
+        <span style={{ fontWeight: 600 }}>🔒 Change password</span><span className="faint">{open ? '▾' : '›'}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          <input className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password (min 6)" />
+          <button className="btn btn-primary btn-block" style={{ marginTop: 10 }} disabled={busy || pw.length < 6} onClick={apply}>{busy ? 'Setting…' : 'Set new password'}</button>
+          {msg && <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>{msg}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -333,8 +388,8 @@ function ChannelsModal({ channels, users, orders, onClose }) {
         <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>Create a channel first (e.g. <b>THG</b>), then add vendors to it — they’ll be coded THG-01, THG-02…</p>
 
         <div className="row-2" style={{ alignItems: 'end' }}>
-          <div className="field" style={{ margin: 0 }}><label>Code</label><input className="input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="THG" maxLength={6} /></div>
-          <div className="field" style={{ margin: 0 }}><label>Name (optional)</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="The House of Gold" /></div>
+          <div className="field" style={{ margin: 0 }}><label>Code</label><input className="input" autoComplete="off" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="THG" maxLength={6} /></div>
+          <div className="field" style={{ margin: 0 }}><label>Name (optional)</label><input className="input" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} placeholder="The House of Gold" /></div>
         </div>
         {err && <p style={{ color: 'var(--red)', fontSize: 13 }}>{err}</p>}
         <button className="btn btn-primary btn-block" style={{ margin: '12px 0 18px' }} disabled={busy || !code.trim()} onClick={add}>{busy ? 'Creating…' : 'Create channel'}</button>
@@ -358,7 +413,7 @@ function ChannelsModal({ channels, users, orders, onClose }) {
               </div>
               {editId === c.id && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <input className="input" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="New name" />
+                  <input className="input" autoComplete="off" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="New name" />
                   <button className="btn btn-primary" style={{ flex: '0 0 auto' }} onClick={() => saveName(c)}>Save</button>
                 </div>
               )}

@@ -52,7 +52,7 @@ export default function SetPassword() {
         <div className="card" style={{ padding: 20 }}>
           <div className="field">
             <label>New password</label>
-            <input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 6 characters" />
+            <input className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 6 characters" />
           </div>
           {err && <p style={{ color: 'var(--red)', fontSize: 13, marginTop: -6 }}>{err}</p>}
           <button className="btn btn-primary btn-block" disabled={busy || pw.length < 6} onClick={save}>{busy ? 'Saving…' : (reset ? 'Update password' : 'Set password & continue')}</button>

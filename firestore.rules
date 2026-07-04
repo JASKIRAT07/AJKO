@@ -87,6 +87,14 @@ service cloud.firestore {
       allow delete: if isAdmin() || (signedIn() && resource.data.userId == myUserId());
     }
 
+    // Public code → login-email index for team members (TM-01 → tm-01@…).
+    // Reveals only the synthesized auth email, never a password. Read is public
+    // so the login screen can resolve it BEFORE the user is signed in.
+    match /teamCodes/{code} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /counters/{id} {
       allow read, write: if signedIn();
     }

@@ -1,5 +1,5 @@
 // Firebase initialization for AJKO
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import {
   getAuth,
   RecaptchaVerifier,
@@ -20,6 +20,15 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// A SECOND Firebase app instance, used only to create team auth accounts without
+// disturbing the admin's session (createUserWithEmailAndPassword signs in as the
+// new user on whichever app it runs against).
+export function getSecondaryAuth() {
+  const NAME = 'ajko-secondary';
+  const existing = getApps().find((a) => a.name === NAME);
+  return getAuth(existing || initializeApp(firebaseConfig, NAME));
+}
 export const storage = getStorage(app);
 export const functions = getFunctions(app); // us-central1 (matches deployed functions)
 

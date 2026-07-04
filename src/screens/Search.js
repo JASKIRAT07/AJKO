@@ -43,7 +43,7 @@ export default function Search() {
       <div className="screen screen-pad-bottom">
         <div className="card card-tight" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <IcSearch size={18} color="var(--ink-faint)" />
-          <input className="input" style={{ border: 'none', padding: 4 }} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Order no, item, store ref, vendor…" />
+          <input className="input" autoComplete="off" style={{ border: 'none', padding: 4 }} autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Order no, item, store ref, vendor…" />
         </div>
 
         <div className="section-title">Filters</div>

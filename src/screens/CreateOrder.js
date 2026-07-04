@@ -162,19 +162,19 @@ export default function CreateOrder() {
 
         <div className="row-2">
           <div className="field"><label>Store order no. <span className="req">*</span></label>
-            <input className="input" value={form.storeOrderNo} onChange={(e) => set('storeOrderNo', e.target.value)} placeholder="e.g. 4821" /></div>
+            <input className="input" autoComplete="off" value={form.storeOrderNo} onChange={(e) => set('storeOrderNo', e.target.value)} placeholder="e.g. 4821" /></div>
           <div className="field"><label>App order no.</label>
-            <input className="input" value={appOrderNo} disabled /></div>
+            <input className="input" autoComplete="off" value={appOrderNo} disabled /></div>
         </div>
 
         <div className="field"><label>Item name <span className="req">*</span></label>
-          <input className="input" value={form.itemName} onChange={(e) => set('itemName', e.target.value)} placeholder="Tikka, Passa, Set…" /></div>
+          <input className="input" autoComplete="off" value={form.itemName} onChange={(e) => set('itemName', e.target.value)} placeholder="Tikka, Passa, Set…" /></div>
 
         <div className="row-2">
           <div className="field"><label>Weight (gms) <span className="req">*</span></label>
-            <input className="input" type="number" value={form.weight} onChange={(e) => set('weight', e.target.value)} placeholder="0" /></div>
+            <input className="input" autoComplete="off" type="number" value={form.weight} onChange={(e) => set('weight', e.target.value)} placeholder="0" /></div>
           <div className="field"><label>Pieces (pcs)</label>
-            <input className="input" type="number" value={form.pieces} onChange={(e) => set('pieces', e.target.value)} placeholder="—" /></div>
+            <input className="input" autoComplete="off" type="number" value={form.pieces} onChange={(e) => set('pieces', e.target.value)} placeholder="—" /></div>
         </div>
 
         <DropdownField label="Purity" req options={PURITY_OPTIONS} value={form.purity} custom={customPurity}
@@ -186,12 +186,12 @@ export default function CreateOrder() {
           onCustom={(v) => set('look', v)} placeholder="Custom finish" />
 
         <div className="row-2">
-          <div className="field"><label>Size</label><input className="input" value={form.size} onChange={(e) => set('size', e.target.value)} placeholder="—" /></div>
-          <div className="field"><label>Width</label><input className="input" value={form.width} onChange={(e) => set('width', e.target.value)} placeholder="—" /></div>
+          <div className="field"><label>Size</label><input className="input" autoComplete="off" value={form.size} onChange={(e) => set('size', e.target.value)} placeholder="—" /></div>
+          <div className="field"><label>Width</label><input className="input" autoComplete="off" value={form.width} onChange={(e) => set('width', e.target.value)} placeholder="—" /></div>
         </div>
 
         <div className="field"><label>Due date <span className="req">*</span></label>
-          <input className="input" type="date" value={form.dueDate} onChange={(e) => set('dueDate', e.target.value)} />
+          <input className="input" autoComplete="off" type="date" value={form.dueDate} onChange={(e) => set('dueDate', e.target.value)} />
           {form.dueDate && <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>{countdownLabel(new Date(form.dueDate))}</div>}
         </div>
 
@@ -203,9 +203,9 @@ export default function CreateOrder() {
         </div>
 
         <div className="field"><label>Design details</label>
-          <textarea className="textarea" value={form.designDetails} onChange={(e) => set('designDetails', e.target.value)} placeholder="Design notes…" /></div>
+          <textarea className="textarea" autoComplete="off" value={form.designDetails} onChange={(e) => set('designDetails', e.target.value)} placeholder="Design notes…" /></div>
         <div className="field"><label>Extra details</label>
-          <textarea className="textarea" value={form.extraDetails} onChange={(e) => set('extraDetails', e.target.value)} placeholder="Anything else…" /></div>
+          <textarea className="textarea" autoComplete="off" value={form.extraDetails} onChange={(e) => set('extraDetails', e.target.value)} placeholder="Anything else…" /></div>
 
         <div className="field row-between" style={{ alignItems: 'center' }}>
           <label style={{ margin: 0 }}>Sample taken</label>
@@ -256,7 +256,7 @@ function DropdownField({ label, req, options, value, custom, onSelect, onCustom,
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
         <option value="__custom">+ Add custom</option>
       </select>
-      {custom && <input className="input" style={{ marginTop: 8 }} value={value} onChange={(e) => onCustom(e.target.value)} placeholder={placeholder} />}
+      {custom && <input className="input" autoComplete="off" style={{ marginTop: 8 }} value={value} onChange={(e) => onCustom(e.target.value)} placeholder={placeholder} />}
     </div>
   );
 }

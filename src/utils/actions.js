@@ -51,6 +51,16 @@ export async function sendMessage({ channelId, orderId = null, sender, content, 
   });
 }
 
+// Admin-only soft delete: keep the doc so the conversation still reads in order,
+// but replace its content with a "deleted" placeholder. Rules allow only admins
+// to update messages.
+export async function deleteMessageAsAdmin(id) {
+  await updateDoc(doc(db, 'messages', id), {
+    deleted: true,
+    deletedAt: serverTimestamp(),
+  });
+}
+
 export async function notify({ userId, type, title, body, orderId = null }) {
   if (!userId) return;
   await addDoc(collection(db, 'notifications'), {

@@ -5,7 +5,7 @@ import {
   useChannels, useChannelMessages, useOrders, decorateOrders,
 } from '../hooks/useCollections';
 import { dayKey, dayDivider, formatTime, isDone } from '../utils/format';
-import { sendMessage } from '../utils/actions';
+import { sendMessage, deleteMessageAsAdmin } from '../utils/actions';
 import { uploadFile, uploadBlob, supportedAudioMime } from '../utils/upload';
 import BottomNav from '../components/BottomNav';
 import { IcSend, IcMic, IcImage } from '../components/Icons';
@@ -13,7 +13,7 @@ import { IcSend, IcMic, IcImage } from '../components/Icons';
 const MENTION = /(@(?:AO|APP)-\d+)/g;
 
 export default function Conversations() {
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const { data: channels } = useChannels(profile);
@@ -115,10 +115,17 @@ export default function Conversations() {
   });
 
   const renderMessage = (m) => {
+    if (m.deleted) return <span style={{ fontStyle: 'italic', opacity: 0.7 }}>Message deleted by admin</span>;
     if (m.type === 'voice') return <audio src={m.content} controls style={{ width: 220, maxWidth: '100%', height: 38 }} />;
     if (m.type === 'image') return <img src={m.content} alt="" onClick={() => setLightbox({ url: m.content, video: false })} style={{ maxWidth: 220, borderRadius: 12, cursor: 'pointer', display: 'block' }} />;
     if (m.type === 'video') return <video src={m.content} controls playsInline style={{ maxWidth: 220, borderRadius: 12, display: 'block' }} />;
     return <span>{renderContent(m.content)}</span>;
+  };
+
+  const deleteMsg = async (m) => {
+    if (!isAdmin || m.deleted) return;
+    if (!window.confirm('Delete this message for everyone? It will show as “Message deleted by admin”.')) return;
+    try { await deleteMessageAsAdmin(m.id); } catch { alert('Could not delete message.'); }
   };
 
   let lastDay = null;
@@ -149,7 +156,15 @@ export default function Conversations() {
               <div className={`msg ${mine ? 'out' : 'in'}`}>
                 {!mine && <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 2 }}>{m.senderCode}</div>}
                 {renderMessage(m)}
-                <div className="meta">{formatTime(m.timestamp)}</div>
+                <div className="meta" style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                  <span>{formatTime(m.timestamp)}</span>
+                  {isAdmin && !m.deleted && (
+                    <button onClick={() => deleteMsg(m)} title="Delete message"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 11, padding: 0, opacity: 0.8 }}>
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -186,7 +201,7 @@ export default function Conversations() {
           <button className="round-btn soft" onClick={() => setShowTagger(true)} title="Tag an order" style={{ fontWeight: 800 }}>@</button>
           <button className="round-btn soft" onClick={() => fileRef.current?.click()} title="Photo or video"><IcImage size={20} /></button>
           <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={onPickFile} />
-          <input ref={inputRef} className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${channel?.code || ''}…`} onKeyDown={(e) => e.key === 'Enter' && send()} />
+          <input ref={inputRef} className="input" autoComplete="off" value={text} onChange={(e) => setText(e.target.value)} placeholder={`Message ${channel?.code || ''}…`} onKeyDown={(e) => e.key === 'Enter' && send()} />
           <button className={`round-btn ${recording ? 'primary' : 'soft'}`} onClick={toggleRec} title="Voice message" style={recording ? { color: '#fff' } : {}}>{recording ? '⏹' : <IcMic size={20} />}</button>
           <button className="round-btn primary" onClick={send}><IcSend size={18} /></button>
         </div>

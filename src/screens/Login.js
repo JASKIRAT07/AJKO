@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  passwordLogin, startPhoneOtp, confirmOtp,
+  passwordLogin, teamLogin, looksLikeCode, startPhoneOtp, confirmOtp,
   bootstrapFirstAdmin, adminExists, sendResetEmail,
 } from '../utils/auth';
 import { AUTH_BUILD } from '../context/AuthContext';
@@ -34,7 +34,10 @@ export default function Login() {
   const doSignIn = async () => {
     setErr(''); setBusy(true);
     try {
-      await passwordLogin(loginId, password);
+      // Team members sign in with their CODE (e.g. TM-01). Admin uses email,
+      // vendors use phone — both go through passwordLogin.
+      if (looksLikeCode(loginId)) await teamLogin(loginId, password);
+      else await passwordLogin(loginId, password);
     } catch (e) {
       setErr(friendly(e));
     } finally { setBusy(false); }
@@ -47,6 +50,11 @@ export default function Login() {
       if (resetFlow && loginId.includes('@')) {
         await sendResetEmail(loginId);
         setStep('emailsent');
+        return;
+      }
+      // Team members (codes) have no self-service reset — only an admin can.
+      if (looksLikeCode(loginId)) {
+        setErr('Team members can’t reset their own password — please ask your admin to set a new one.');
         return;
       }
       // No pre-login Firestore read (that requires sign-in). Send the OTP to the
@@ -106,12 +114,12 @@ export default function Login() {
           ) : mode === MODES.SIGNIN ? (
             <>
               <div className="field">
-                <label>Phone number</label>
-                <input className="input" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="98765 43210" />
+                <label>Phone or team code</label>
+                <input className="input" autoComplete="off" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="98765 43210 or TM-01" />
               </div>
               <div className="field">
                 <label>Password</label>
-                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" />
+                <input className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" />
               </div>
               {err && <p style={{ color: 'var(--red)', fontSize: 13, marginTop: -6 }}>{err}</p>}
               <button className="btn btn-primary btn-block" disabled={busy} onClick={doSignIn} style={{ marginTop: 4 }}>
@@ -130,7 +138,7 @@ export default function Login() {
                 <>
                   <div className="field">
                     <label>{resetFlow ? 'Phone or email' : 'Phone number'}</label>
-                    <input className="input" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder={resetFlow ? '98765 43210 or you@store.com' : '98765 43210'} />
+                    <input className="input" autoComplete="off" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder={resetFlow ? '98765 43210 or you@store.com' : '98765 43210'} />
                   </div>
                   {err && <p style={{ color: 'var(--red)', fontSize: 13 }}>{err}</p>}
                   <button className="btn btn-primary btn-block" disabled={busy} onClick={sendOtp}>{busy ? 'Sending…' : (resetFlow && loginId.includes('@') ? 'Send reset link' : 'Send OTP')}</button>
@@ -152,7 +160,7 @@ export default function Login() {
                 <>
                   <div className="otp-row" style={{ margin: '8px 0 16px' }}>
                     {otp.map((d, i) => (
-                      <input key={i} ref={(el) => { otpRefs.current[i] = el; }} value={d} inputMode="numeric" maxLength={1}
+                      <input key={i} ref={(el) => { otpRefs.current[i] = el; }} value={d} inputMode="numeric" maxLength={1} autoComplete="off"
                         onChange={(e) => handleOtpChange(i, e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Backspace' && !otp[i] && i > 0) otpRefs.current[i - 1]?.focus(); }} />
                     ))}
@@ -198,9 +206,9 @@ function Bootstrap({ onBack }) {
     <>
       <h3 style={{ marginTop: 0 }}>Create the first admin</h3>
       <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>Only works once, while no users exist.</p>
-      <div className="field"><label>Name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
-      <div className="field"><label>Email</label><input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@store.com" /></div>
-      <div className="field"><label>Password</label><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+      <div className="field"><label>Name</label><input className="input" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} /></div>
+      <div className="field"><label>Email</label><input className="input" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@store.com" /></div>
+      <div className="field"><label>Password</label><input className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
       {err && <p style={{ color: 'var(--red)', fontSize: 13 }}>{err}</p>}
       <button className="btn btn-primary btn-block" disabled={busy || !name || !email || password.length < 6} onClick={go}>{busy ? 'Creating…' : 'Create admin'}</button>
       <p style={{ textAlign: 'center', marginTop: 12, marginBottom: 0 }}><span className="link" onClick={onBack}>Back to sign in</span></p>

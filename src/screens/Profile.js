@@ -9,7 +9,7 @@ import { RoleBadge } from '../components/Badges';
 import BottomNav from '../components/BottomNav';
 
 export default function Profile() {
-  const { profile, isVendor, logout } = useAuth();
+  const { profile, isVendor, role, logout } = useAuth();
   const nav = useNavigate();
   if (!profile) return null;
 
@@ -33,7 +33,8 @@ export default function Profile() {
         </div>
 
         <EditProfile profile={profile} isVendor={isVendor} />
-        <ChangePassword />
+        {/* Team passwords are admin-managed only — no self-service change. */}
+        {role !== 'team' && <ChangePassword />}
 
         <div className="card" style={{ marginBottom: 12 }}>
           <div className="row-between" onClick={() => nav('/notification-settings')} style={{ cursor: 'pointer' }}>
@@ -70,9 +71,9 @@ function EditProfile({ profile, isVendor }) {
       </div>
       {open && (
         <div style={{ marginTop: 12 }}>
-          <div className="field"><label>Name</label><input className="input" value={name} onChange={(e) => setName(e.target.value)} /></div>
-          <div className="field"><label>Phone</label><input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
-          <div className="field" style={{ marginBottom: 8 }}><label>{isVendor ? 'Specialty' : 'Designation'}</label><input className="input" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></div>
+          <div className="field"><label>Name</label><input className="input" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="field"><label>Phone</label><input className="input" autoComplete="off" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+          <div className="field" style={{ marginBottom: 8 }}><label>{isVendor ? 'Specialty' : 'Designation'}</label><input className="input" autoComplete="off" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></div>
           <button className="btn btn-primary btn-block" disabled={!name} onClick={save}>Save changes</button>
           {msg && <p style={{ fontSize: 13, marginBottom: 0, color: msg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{msg}</p>}
         </div>
@@ -97,7 +98,7 @@ function ChangePassword() {
       </div>
       {open && (
         <div style={{ marginTop: 12 }}>
-          <input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password" />
+          <input className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password" />
           <button className="btn btn-primary btn-block" style={{ marginTop: 10 }} disabled={pw.length < 6} onClick={save}>Update password</button>
           {msg && <p style={{ fontSize: 13, marginBottom: 0, color: msg.startsWith('✓') ? 'var(--green)' : 'var(--red)' }}>{msg}</p>}
         </div>

@@ -13,12 +13,25 @@ import {
   linkWithCredential,
   updatePassword,
   sendPasswordResetEmail,
+  signOut,
 } from 'firebase/auth';
 import {
-  collection, doc, updateDoc, addDoc, serverTimestamp, arrayUnion, getDocs, query, where,
+  collection, doc, setDoc, getDoc, updateDoc, addDoc, serverTimestamp, arrayUnion, getDocs, query, where,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { auth, db, functions, createRecaptcha } from '../firebase';
+import { auth, db, functions, createRecaptcha, getSecondaryAuth } from '../firebase';
+
+// A team member's code (e.g. TM-01) IS their username. Their Firebase Auth
+// account uses a synthesized email under the hood.
+export function teamCodeToEmail(code) {
+  return `${String(code || '').trim().toLowerCase()}@team.ajko.app`;
+}
+
+// Looks like a member code (has a letter), not a phone (digits only) or an email.
+export function looksLikeCode(id) {
+  const v = String(id || '').trim();
+  return !v.includes('@') && /[a-zA-Z]/.test(v);
+}
 
 // Plausible stored formats for a typed phone (for the direct-read fallback).
 export function phoneVariants(raw) {
@@ -89,6 +102,72 @@ export async function passwordLogin(loginId, password) {
 // Email-based password reset (for email accounts like the admin).
 export async function sendResetEmail(email) {
   return sendPasswordResetEmail(auth, String(email).trim().toLowerCase());
+}
+
+// ---- Team members: code + password, no OTP, admin-managed --------------------
+
+// Team login: code (TM-01) + password. Resolves the auth email from the public
+// teamCodes index (so admin password resets work); falls back to the
+// deterministic email when the index isn't there yet (first-time, pre-reset).
+export async function teamLogin(code, password) {
+  const key = String(code || '').trim().toUpperCase();
+  let email = teamCodeToEmail(key);
+  try {
+    const snap = await getDoc(doc(db, 'teamCodes', key));
+    if (snap.exists() && snap.data().email) email = snap.data().email;
+  } catch {
+    // teamCodes not readable yet (rules not published) → use deterministic email
+  }
+  return signInWithEmailAndPassword(auth, email, password);
+}
+
+// Admin creates a team member: name + auto code + password. Creates their auth
+// account on the SECONDARY app so the admin stays signed in. No phone/email.
+export async function createTeamMember({ name, code, password, channelIds = [] }) {
+  const key = String(code || '').trim().toUpperCase();
+  const email = teamCodeToEmail(key);
+  const secAuth = getSecondaryAuth();
+  const cred = await createUserWithEmailAndPassword(secAuth, email, password);
+  const uid = cred.user.uid;
+  await signOut(secAuth).catch(() => {});
+
+  const ref = await addDoc(collection(db, 'users'), {
+    name,
+    phone: '',
+    email: null,
+    role: 'team',
+    code: key,
+    specialty: '',
+    channelId: null,
+    assignedChannels: channelIds,
+    isActive: true,
+    passwordSet: true,
+    authUid: uid,
+    authEmail: email,
+    createdAt: serverTimestamp(),
+  });
+  // Public code → email index (best-effort; needs the teamCodes rule published).
+  await setDoc(doc(db, 'teamCodes', key), { email, userId: ref.id }).catch(() => {});
+  for (const cid of channelIds) {
+    await updateDoc(doc(db, 'channels', cid), { memberIds: arrayUnion(ref.id) }).catch(() => {});
+  }
+  return ref;
+}
+
+// Admin resets a team member's password. Firebase has no client API to change
+// another user's password, so we mint a FRESH auth account (versioned email) and
+// re-point the user doc + public index at it. The old account is simply orphaned.
+export async function changeTeamPassword(user, newPassword) {
+  const key = String(user.code || '').trim().toUpperCase();
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const email = `${key.toLowerCase()}.${suffix}@team.ajko.app`;
+  const secAuth = getSecondaryAuth();
+  const cred = await createUserWithEmailAndPassword(secAuth, email, newPassword);
+  const uid = cred.user.uid;
+  await signOut(secAuth).catch(() => {});
+
+  await updateDoc(doc(db, 'users', user.id), { authUid: uid, authEmail: email, passwordSet: true });
+  await setDoc(doc(db, 'teamCodes', key), { email, userId: user.id });
 }
 
 // Returns a confirmationResult to be used with confirmOtp().
