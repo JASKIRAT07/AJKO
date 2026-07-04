@@ -137,7 +137,19 @@ async function sendWhatsAppTemplate(toPhone, templateName, bodyParams) {
       type: 'text',
       text: (v === null || v === undefined || v === '') ? '—' : String(v),
     }));
-    const res = await fetch(`https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_ID.value()}/messages`, {
+
+    // Defensive: if the secret was accidentally stored with the ID doubled
+    // (e.g. "1222…32421222…3242"), collapse it so the path has it exactly once.
+    let phoneId = String(WHATSAPP_PHONE_ID.value()).trim();
+    const half = phoneId.slice(0, phoneId.length / 2);
+    if (phoneId.length % 2 === 0 && half && half + half === phoneId) {
+      logger.warn('WHATSAPP_PHONE_ID looks doubled — collapsing to a single ID. Consider resetting the secret.');
+      phoneId = half;
+    }
+    const url = `https://graph.facebook.com/v21.0/${phoneId}/messages`;
+    logger.info(`WA ${templateName} POST ${url}`); // ID must appear exactly once
+
+    const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${WHATSAPP_TOKEN.value()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
