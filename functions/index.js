@@ -1,26 +1,41 @@
 /**
- * AJKO Cloud Functions — scoped, private push notifications.
+ * AJKO Cloud Functions — scoped, private notifications (FCM push + WhatsApp).
  *
- * Notification types & push text:
+ * FCM push text:
  *   new       → "New Order — AO-001"          (vendor members of the order's channel only)
  *   message   → "New message in <channel>"    (that channel's members + admins, not the sender)
  *   reminder  → "You have pending orders"      (each vendor, only if THEY have New-stage orders)
+ *
+ * WhatsApp Cloud API templates (vendor phone from the member doc; sent alongside
+ * FCM, never blocking it — a WhatsApp failure only logs):
+ *   new_order_alert        (order create)     [appOrderNo, itemName, dueDate]
+ *   order_rework           (stage → rework)   [appOrderNo, itemName, reworkNote|—]
+ *   order_details_updated  (detail edited)    [appOrderNo, "what changed"]
+ *   daily_pending_reminder (11:00 & 15:00)    [count, order nos]
+ *   order_overdue          (10:00 IST)        [count, order nos]
+ *   due_tomorrow           (18:00 IST)        [count, tomorrow date, order nos]
  *
  * Per-user toggles (notificationPrefs, all default ON):
  *   vendor → newOrderAlert, reminder11am, reminder3pm, chatNotifications
  *   team   → chatNotifications
  *   admin  → chatNotifications
  */
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
+const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
 const db = admin.firestore();
 setGlobalOptions({ region: 'us-central1', maxInstances: 10 });
+
+// WhatsApp Cloud API credentials (set via `firebase functions:secrets:set`).
+const WHATSAPP_TOKEN = defineSecret('WHATSAPP_TOKEN');
+const WHATSAPP_PHONE_ID = defineSecret('WHATSAPP_PHONE_ID');
+const WA_SECRETS = [WHATSAPP_TOKEN, WHATSAPP_PHONE_ID];
 
 // ---- helpers ----------------------------------------------------------------
 function phoneVariants(raw) {
@@ -62,6 +77,94 @@ async function cleanupTokens(userId, tokens, res) {
       fcmTokens: admin.firestore.FieldValue.arrayRemove(...bad),
     }).catch(() => {});
   }
+}
+
+// ---- WhatsApp Cloud API -----------------------------------------------------
+
+// Normalize an Indian phone to 91XXXXXXXXXX (WhatsApp wire format).
+function normalizeWa(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length === 12 && d.startsWith('91')) return d; // already correct
+  d = d.replace(/^0+/, '').slice(-10);                 // drop leading 0s, keep last 10
+  return d.length === 10 ? `91${d}` : '';
+}
+
+// Firestore Timestamp / Date / string → JS Date (or null).
+function toDate(v) {
+  if (!v) return null;
+  if (typeof v.toDate === 'function') return v.toDate();
+  if (v instanceof Date) return v;
+  if (typeof v === 'object' && v._seconds != null) return new Date(v._seconds * 1000);
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// "24 June 2026" in IST.
+function formatDMY(d) {
+  if (!d) return '—';
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'long', year: 'numeric' }).format(d);
+}
+// "2026-06-24" in IST (for date comparisons).
+function istYMD(d) {
+  if (!d) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
+const DONE_STAGES = ['ready', 'handedover'];
+const isPending = (stage) => !DONE_STAGES.includes(stage);
+
+// Sort orders by their numeric AO- number, ascending.
+function sortByNo(list) {
+  const n = (o) => parseInt(String(o.appOrderNo || '').replace(/\D/g, ''), 10) || 0;
+  return [...list].sort((a, b) => n(a) - n(b));
+}
+const orderNos = (list) => list.map((o) => o.appOrderNo).join(', ');
+
+// Active vendor member(s) of a channel.
+async function channelVendors(channelId) {
+  if (!channelId) return [];
+  const snap = await db.collection('users').where('channelId', '==', channelId).get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role === 'vendor' && u.isActive !== false);
+}
+
+// Shared sender. NEVER throws — a WhatsApp failure only logs.
+async function sendWhatsAppTemplate(toPhone, templateName, bodyParams) {
+  try {
+    const to = normalizeWa(toPhone);
+    if (!to) { logger.warn(`WA ${templateName}: no valid phone`, toPhone); return; }
+    const parameters = (bodyParams || []).map((v) => ({
+      type: 'text',
+      text: (v === null || v === undefined || v === '') ? '—' : String(v),
+    }));
+    const res = await fetch(`https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_ID.value()}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN.value()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: { name: templateName, language: { code: 'en' }, components: [{ type: 'body', parameters }] },
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      logger.error(`WA ${templateName} HTTP ${res.status}`, t);
+    } else {
+      logger.info(`WA ${templateName} → ${to}`);
+    }
+  } catch (e) {
+    logger.error(`WA ${templateName} error`, e);
+  }
+}
+
+// Send a template to every vendor of a channel that has a phone.
+async function waToChannelVendors(channelId, templateName, params) {
+  const vendors = await channelVendors(channelId);
+  await Promise.all(vendors.map((v) => {
+    if (!v.phone) { logger.info(`WA ${templateName}: vendor ${v.id} has no phone, skipping`); return Promise.resolve(); }
+    return sendWhatsAppTemplate(v.phone, templateName, params);
+  }));
 }
 
 // ---- 1. Deliver every notification doc as an FCM push -----------------------
@@ -138,36 +241,144 @@ exports.notifyOnOrder = onDocumentCreated('orders/{id}', async (event) => {
   })));
 });
 
+// ---- WhatsApp: new order → vendor(s) of the channel (idempotent) ------------
+exports.waNewOrderAlert = onDocumentCreated({ document: 'orders/{id}', secrets: WA_SECRETS }, async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const o = snap.data();
+  if (!o || o.isDraft || !o.channelId) return;
+  if (o.waNewOrderSent === true) return; // already sent
+
+  await waToChannelVendors(o.channelId, 'new_order_alert', [
+    o.appOrderNo, o.itemName, formatDMY(toDate(o.dueDate)),
+  ]);
+  await snap.ref.update({ waNewOrderSent: true }).catch((e) => logger.error('mark waNewOrderSent failed', e));
+});
+
+// Human description of which order detail fields changed.
+function describeOrderChanges(b, a) {
+  const parts = [];
+  const s = (v) => (v === null || v === undefined ? '' : String(v));
+  if (s(a.weight) !== s(b.weight)) parts.push(`Weight changed to ${s(a.weight)}g`);
+  if (s(a.purity) !== s(b.purity)) parts.push(`Purity changed to ${s(a.purity)}`);
+  if (s(a.itemName) !== s(b.itemName)) parts.push(`Item changed to ${s(a.itemName)}`);
+  if (s(a.look) !== s(b.look)) parts.push(`Finish changed to ${s(a.look)}`);
+  if (s(a.designDetails) !== s(b.designDetails)) parts.push('Design details updated');
+  const bd = toDate(b.dueDate); const ad = toDate(a.dueDate);
+  if ((bd ? bd.getTime() : 0) !== (ad ? ad.getTime() : 0)) parts.push(`Due date changed to ${formatDMY(ad)}`);
+  return parts.join('; ');
+}
+
+// ---- WhatsApp: order UPDATE → rework transition and/or detail edits ---------
+exports.waOnOrderUpdate = onDocumentUpdated({ document: 'orders/{id}', secrets: WA_SECRETS }, async (event) => {
+  const before = event.data?.before?.data();
+  const after = event.data?.after?.data();
+  if (!before || !after || after.isDraft || !after.channelId) return;
+
+  // (a) Stage moved INTO rework.
+  if (before.stage !== 'rework' && after.stage === 'rework') {
+    await waToChannelVendors(after.channelId, 'order_rework', [
+      after.appOrderNo, after.itemName, after.reworkNote || '—',
+    ]);
+  }
+
+  // (b) One of the tracked detail fields changed (never on stage/chat alone).
+  const desc = describeOrderChanges(before, after);
+  if (desc) {
+    await waToChannelVendors(after.channelId, 'order_details_updated', [after.appOrderNo, desc]);
+  }
+});
+
 // ---- 4. Daily reminders (11:00 & 15:00 IST), individual per vendor ----------
+// FCM push keeps its original behavior (nudge when the channel has NEW orders).
+// WhatsApp daily_pending_reminder is sent ALONGSIDE it for any pending order.
 async function runReminder(prefKey) {
   const [usersSnap, ordersSnap] = await Promise.all([
     db.collection('users').get(),
-    db.collection('orders').where('stage', '==', 'new').get(),
+    db.collection('orders').get(),
   ]);
 
   const newByChannel = {};
+  const pendingByChannel = {};
   ordersSnap.docs.forEach((d) => {
-    const o = d.data();
-    if (o.isDraft) return;
-    if (o.channelId) newByChannel[o.channelId] = (newByChannel[o.channelId] || 0) + 1;
+    const o = { id: d.id, ...d.data() };
+    if (o.isDraft || !o.channelId) return;
+    if (o.stage === 'new') newByChannel[o.channelId] = (newByChannel[o.channelId] || 0) + 1;
+    if (isPending(o.stage)) (pendingByChannel[o.channelId] = pendingByChannel[o.channelId] || []).push(o);
   });
 
-  // A vendor is reminded only if THEIR channel has New-stage orders and their toggle is on.
   const vendors = usersSnap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((u) => u.role === 'vendor' && u.isActive !== false
-      && u.notificationPrefs?.[prefKey] !== false
-      && u.channelId && newByChannel[u.channelId]);
+    .filter((u) => u.role === 'vendor' && u.isActive !== false);
 
-  await Promise.all(vendors.map((v) => createNotification(v.id, {
-    type: 'reminder',
-    title: 'You have pending orders',
-  })));
-  logger.info(`${prefKey}: reminded ${vendors.length} vendor(s)`);
+  let fcmCount = 0;
+  await Promise.all(vendors.map(async (v) => {
+    if (v.notificationPrefs?.[prefKey] === false || !v.channelId) return;
+
+    // FCM push (unchanged): only when the channel has NEW-stage orders.
+    if (newByChannel[v.channelId]) {
+      await createNotification(v.id, { type: 'reminder', title: 'You have pending orders' });
+      fcmCount++;
+    }
+
+    // WhatsApp: any pending order (New / In progress / Rework) in the channel.
+    const pend = sortByNo(pendingByChannel[v.channelId] || []);
+    if (pend.length > 0) {
+      if (v.phone) await sendWhatsAppTemplate(v.phone, 'daily_pending_reminder', [String(pend.length), orderNos(pend)]);
+      else logger.info(`WA daily_pending_reminder: vendor ${v.id} has no phone, skipping`);
+    }
+  }));
+  logger.info(`${prefKey}: FCM reminded ${fcmCount} vendor(s)`);
 }
 
-exports.remind11am = onSchedule({ schedule: '0 11 * * *', timeZone: 'Asia/Kolkata' }, () => runReminder('reminder11am'));
-exports.remind3pm = onSchedule({ schedule: '0 15 * * *', timeZone: 'Asia/Kolkata' }, () => runReminder('reminder3pm'));
+exports.remind11am = onSchedule({ schedule: '0 11 * * *', timeZone: 'Asia/Kolkata', secrets: WA_SECRETS }, () => runReminder('reminder11am'));
+exports.remind3pm = onSchedule({ schedule: '0 15 * * *', timeZone: 'Asia/Kolkata', secrets: WA_SECRETS }, () => runReminder('reminder3pm'));
+
+// ---- WhatsApp: overdue (10:00 IST) and due-tomorrow (18:00 IST) -------------
+async function pendingOrdersByChannel() {
+  const snap = await db.collection('orders').get();
+  const map = {};
+  snap.docs.forEach((d) => {
+    const o = { id: d.id, ...d.data() };
+    if (o.isDraft || !o.channelId || !isPending(o.stage)) return;
+    (map[o.channelId] = map[o.channelId] || []).push(o);
+  });
+  return map;
+}
+
+async function activeVendors() {
+  const snap = await db.collection('users').get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role === 'vendor' && u.isActive !== false);
+}
+
+exports.orderOverdueReminder = onSchedule({ schedule: '0 10 * * *', timeZone: 'Asia/Kolkata', secrets: WA_SECRETS }, async () => {
+  const today = istYMD(new Date());
+  const [byCh, vendors] = await Promise.all([pendingOrdersByChannel(), activeVendors()]);
+  await Promise.all(vendors.map(async (v) => {
+    if (!v.channelId) return;
+    const list = sortByNo((byCh[v.channelId] || []).filter((o) => {
+      const ymd = istYMD(toDate(o.dueDate));
+      return ymd && ymd < today;
+    }));
+    if (list.length === 0) return;
+    if (!v.phone) { logger.info(`WA order_overdue: vendor ${v.id} has no phone, skipping`); return; }
+    await sendWhatsAppTemplate(v.phone, 'order_overdue', [String(list.length), orderNos(list)]);
+  }));
+});
+
+exports.dueTomorrowReminder = onSchedule({ schedule: '0 18 * * *', timeZone: 'Asia/Kolkata', secrets: WA_SECRETS }, async () => {
+  const tomorrowDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const tomorrow = istYMD(tomorrowDate);
+  const tomorrowLabel = formatDMY(tomorrowDate);
+  const [byCh, vendors] = await Promise.all([pendingOrdersByChannel(), activeVendors()]);
+  await Promise.all(vendors.map(async (v) => {
+    if (!v.channelId) return;
+    const list = sortByNo((byCh[v.channelId] || []).filter((o) => istYMD(toDate(o.dueDate)) === tomorrow));
+    if (list.length === 0) return;
+    if (!v.phone) { logger.info(`WA due_tomorrow: vendor ${v.id} has no phone, skipping`); return; }
+    await sendWhatsAppTemplate(v.phone, 'due_tomorrow', [String(list.length), tomorrowLabel, orderNos(list)]);
+  }));
+});
 
 // ---- 5. Private pre-login lookups -------------------------------------------
 exports.lookupLogin = onCall(async (req) => {
