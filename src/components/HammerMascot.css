@@ -1,0 +1,53 @@
+/* AJKO hammer mascot — animations + rig (verbatim from the build reference) */
+
+/* character rig */
+.char { transform-origin: 50% 92%; }
+
+/* idle breathing — always on */
+.breathe { animation: breathe 3.2s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { transform: translateY(0) scaleY(1) scaleX(1); }
+  50% { transform: translateY(-3px) scaleY(1.03) scaleX(.985); }
+}
+
+/* eyes + blink */
+.eye-white { fill: #fff; }
+.pupil { fill: #241c19; transition: transform .25s cubic-bezier(.5, 1.8, .5, 1); }
+.lid { fill: #c9ccd4; transform-origin: center; transform: scaleY(0); transition: transform .08s; }
+.blink .lid { animation: blink 4.5s infinite; }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(0); } 96%, 98% { transform: scaleY(1); } }
+.catch { fill: #fff; opacity: .95; }
+
+/* per-mood body motion */
+.m-greeting { animation: mGreet 1.2s ease-out; }
+@keyframes mGreet { 0% { transform: translateY(6px) scale(.9); } 50% { transform: translateY(-6px) scale(1.05); } 100% { transform: translateY(0) scale(1); } }
+
+.m-working { animation: mWork 1.05s ease-in-out infinite; }
+@keyframes mWork { 0%, 100% { transform: rotate(-7deg) translateY(0); } 45% { transform: rotate(9deg) translateY(3px); } }
+
+.m-celebrating { animation: mCeleb .7s ease-in-out infinite; }
+@keyframes mCeleb { 0%, 100% { transform: translateY(0) scaleY(1); } 25% { transform: translateY(-16px) scaleY(1.08); } 45% { transform: translateY(0) scaleY(.9); } }
+
+.m-proud { animation: mProud 2.2s ease-in-out infinite; }
+@keyframes mProud { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-5px) rotate(-2deg); } }
+
+.m-encouraging { animation: mEnc 1s ease-in-out infinite; }
+@keyframes mEnc { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-9deg); } 60% { transform: rotate(3deg); } }
+
+.m-sleepy { animation: mSleep 4s ease-in-out infinite; }
+@keyframes mSleep { 0%, 100% { transform: rotate(-4deg) translateY(0); } 50% { transform: rotate(3deg) translateY(2px); } }
+
+/* floating accents */
+@keyframes floatZ { 0% { opacity: 0; transform: translate(0, 0) scale(.6); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(14px, -22px) scale(1.15); } }
+@keyframes pop { 0% { opacity: 0; transform: scale(0) rotate(0); } 40% { opacity: 1; transform: scale(1.15) rotate(15deg); } 100% { opacity: .9; transform: scale(1) rotate(0); } }
+.zz text:nth-child(1) { animation: floatZ 2.6s ease-in-out infinite; }
+.zz text:nth-child(2) { animation: floatZ 2.6s ease-in-out .7s infinite; }
+.spark { animation: pop .5s ease-out both; }
+
+/* accessibility — scoped to the mascot so it doesn't disable the whole app */
+@media (prefers-reduced-motion: reduce) {
+  .hammer-mascot .char,
+  .hammer-mascot .char *,
+  .hammer-mascot .zz text,
+  .hammer-mascot .spark { animation: none !important; }
+}
