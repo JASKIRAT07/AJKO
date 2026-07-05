@@ -21,8 +21,8 @@ export function UrgencyBadge({ urgency }) {
 // Permanent marker once an order has ever had a material field edited.
 export function EditedBadge() {
   return (
-    <span className="badge" style={{ background: '#3ba9ff1a', color: '#3ba9ff' }}>
-      <span className="dot" style={{ background: '#3ba9ff' }} /> Edited
+    <span className="badge" style={{ background: '#8a5a2b1a', color: '#8a5a2b' }}>
+      <span className="dot" style={{ background: '#8a5a2b' }} /> Edited
     </span>
   );
 }

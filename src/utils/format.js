@@ -2,7 +2,7 @@
 
 export const STAGES = {
   new: { key: 'new', label: 'New', color: '#9ca3af', glow: 'glow-new' },
-  newedited: { key: 'newedited', label: 'New (Edited)', color: '#3ba9ff', glow: 'glow-blue' },
+  newedited: { key: 'newedited', label: 'New (Edited)', color: '#8a5a2b', glow: 'glow-new' },
   inprogress: { key: 'inprogress', label: 'In progress', color: '#3b82f6', glow: 'glow-blue' },
   ready: { key: 'ready', label: 'Ready', color: '#22c55e', glow: 'glow-green' },
   handedover: { key: 'handedover', label: 'Handed over', color: '#14b8a6', glow: 'glow-teal' },

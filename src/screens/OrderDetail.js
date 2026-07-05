@@ -105,12 +105,12 @@ export default function OrderDetail() {
         )}
 
         {order.changes?.length > 0 && (
-          <div style={{ marginTop: 16, border: '1.5px solid #3ba9ff', background: '#3ba9ff14', borderRadius: 14, padding: '12px 14px' }}>
-            <div style={{ fontWeight: 800, color: '#1f8fe6', fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ marginTop: 16, border: '1.5px solid #8a5a2b', background: '#8a5a2b14', borderRadius: 14, padding: '12px 14px' }}>
+            <div style={{ fontWeight: 800, color: '#7a4e24', fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>✏️</span> Change history
             </div>
             {[...order.changes].reverse().map((c, i) => (
-              <div key={i} style={{ fontSize: 13, padding: '3px 0', color: '#0f5c96', lineHeight: 1.5 }}>
+              <div key={i} style={{ fontSize: 13, padding: '3px 0', color: '#5f3e1c', lineHeight: 1.5 }}>
                 <b>{c.label || c.field}:</b> {c.from} → {c.to}
                 <span className="faint" style={{ fontSize: 11 }}> · {formatDate(c.at)}</span>
               </div>
