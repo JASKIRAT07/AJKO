@@ -9,7 +9,7 @@ import {
 } from '../utils/format';
 import { setStage, deleteOrder } from '../utils/actions';
 import { shareOrder, prepareShareFiles } from '../utils/share';
-import { StageBadge, UrgencyBadge } from '../components/Badges';
+import { StageBadge, UrgencyBadge, EditedBadge } from '../components/Badges';
 import StagePipeline from '../components/StagePipeline';
 import MediaStrip from '../components/MediaStrip';
 import { IcBack, IcWhatsApp, IcChevron } from '../components/Icons';
@@ -54,6 +54,7 @@ export default function OrderDetail() {
 
   const specs = [
     ['Store ref', `#${order.storeOrderNo}`],
+    ['Item name', order.itemName || '—'],
     ['Weight', order.weight ? `${order.weight} gms` : '—'],
     ['Purity', order.purity],
     ['Look', order.look],
@@ -81,9 +82,10 @@ export default function OrderDetail() {
             {channel && <span className="chip spec-chip" style={{ fontWeight: 700 }}>💬 {channel.code}</span>}
             <h2 style={{ margin: 0, fontSize: 20 }}>{order.itemName}</h2>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <StageBadge stage={order.stage} />
             <UrgencyBadge urgency={urgency} />
+            {order.edited && <EditedBadge />}
           </div>
         </div>
 
@@ -98,6 +100,20 @@ export default function OrderDetail() {
             {transitions.filter((t) => t.kind === 'primary').map((t) => (
               <button key={t.to} className="btn btn-primary" style={{ flex: 1, minWidth: 130 }}
                 onClick={() => setStage(order, t.to, profile)}>{t.label}</button>
+            ))}
+          </div>
+        )}
+
+        {order.changes?.length > 0 && (
+          <div style={{ marginTop: 16, border: '1.5px solid #3ba9ff', background: '#3ba9ff14', borderRadius: 14, padding: '12px 14px' }}>
+            <div style={{ fontWeight: 800, color: '#1f8fe6', fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>✏️</span> Change history
+            </div>
+            {[...order.changes].reverse().map((c, i) => (
+              <div key={i} style={{ fontSize: 13, padding: '3px 0', color: '#0f5c96', lineHeight: 1.5 }}>
+                <b>{c.label || c.field}:</b> {c.from} → {c.to}
+                <span className="faint" style={{ fontSize: 11 }}> · {formatDate(c.at)}</span>
+              </div>
             ))}
           </div>
         )}

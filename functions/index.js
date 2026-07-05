@@ -267,21 +267,9 @@ exports.waNewOrderAlert = onDocumentCreated({ document: 'orders/{id}', secrets: 
   await snap.ref.update({ waNewOrderSent: true }).catch((e) => logger.error('mark waNewOrderSent failed', e));
 });
 
-// Human description of which order detail fields changed.
-function describeOrderChanges(b, a) {
-  const parts = [];
-  const s = (v) => (v === null || v === undefined ? '' : String(v));
-  if (s(a.weight) !== s(b.weight)) parts.push(`Weight changed to ${s(a.weight)}g`);
-  if (s(a.purity) !== s(b.purity)) parts.push(`Purity changed to ${s(a.purity)}`);
-  if (s(a.itemName) !== s(b.itemName)) parts.push(`Item changed to ${s(a.itemName)}`);
-  if (s(a.look) !== s(b.look)) parts.push(`Finish changed to ${s(a.look)}`);
-  if (s(a.designDetails) !== s(b.designDetails)) parts.push('Design details updated');
-  const bd = toDate(b.dueDate); const ad = toDate(a.dueDate);
-  if ((bd ? bd.getTime() : 0) !== (ad ? ad.getTime() : 0)) parts.push(`Due date changed to ${formatDMY(ad)}`);
-  return parts.join('; ');
-}
-
-// ---- WhatsApp: order UPDATE → rework transition and/or detail edits ---------
+// ---- WhatsApp: order UPDATE → rework or "New (Edited)" stage transitions -----
+// Edits ride the reliable stage-transition path: the client logs changes[] and
+// moves the order to "newedited", and we fire order_details_updated off THAT.
 exports.waOnOrderUpdate = onDocumentUpdated({ document: 'orders/{id}', secrets: WA_SECRETS }, async (event) => {
   const before = event.data?.before?.data();
   const after = event.data?.after?.data();
@@ -294,9 +282,13 @@ exports.waOnOrderUpdate = onDocumentUpdated({ document: 'orders/{id}', secrets: 
     ]);
   }
 
-  // (b) One of the tracked detail fields changed (never on stage/chat alone).
-  const desc = describeOrderChanges(before, after);
-  if (desc) {
+  // (b) Stage moved INTO "New (Edited)" — describe the newly-appended changes.
+  if (before.stage !== 'newedited' && after.stage === 'newedited') {
+    const prevLen = Array.isArray(before.changes) ? before.changes.length : 0;
+    const fresh = (Array.isArray(after.changes) ? after.changes : []).slice(prevLen);
+    const desc = fresh.length
+      ? fresh.map((c) => `${c.label || c.field}: ${c.from} → ${c.to}`).join('; ')
+      : 'Order details updated';
     await waToChannelVendors(after.channelId, 'order_details_updated', [after.appOrderNo, desc]);
   }
 });

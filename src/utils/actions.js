@@ -4,7 +4,7 @@ import {
   arrayUnion, arrayRemove, getDocs, query, where, writeBatch, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { STAGE_ORDER, formatAppOrderNo } from './format';
+import { STAGE_ORDER, formatAppOrderNo, formatDate } from './format';
 import { normalizePhone } from './auth';
 
 // Move an order to a specific stage, recording a full audit entry.
@@ -102,8 +102,78 @@ export async function createOrder(data) {
   return { id: newId, appOrderNo };
 }
 
-export async function updateOrder(id, data) {
-  await updateDoc(doc(db, 'orders', id), data);
+// Material fields — changing any of these logs a change trail, flips edited:true,
+// and pulls the order back to "New (Edited)". Trivial fields (extra details,
+// size, width, pieces, sample) do NOT.
+const MATERIAL_FIELDS = [
+  ['itemName', 'Item name'],
+  ['weight', 'Weight'],
+  ['purity', 'Purity'],
+  ['look', 'Look'],
+  ['dueDate', 'Due date'],
+  ['designDetails', 'Design details'],
+];
+
+function fmtFieldValue(key, v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (key === 'weight') return `${v}g`;
+  if (key === 'dueDate') return formatDate(v);
+  return String(v);
+}
+function fieldChanged(key, a, b) {
+  if (key === 'dueDate') return (a ? formatDate(a) : '') !== (b ? formatDate(b) : '');
+  return String(a ?? '') !== String(b ?? '');
+}
+
+// Edit an order. Without `original`, it's a plain field write. With `original`,
+// material changes are diffed → changes[] trail + edited flag + a move to
+// "New (Edited)" (except a Handed-over order, which stays put but still logs).
+// Returns the count of material changes.
+export async function updateOrder(id, data, { original, actor } = {}) {
+  if (!original) {
+    await updateDoc(doc(db, 'orders', id), data);
+    return 0;
+  }
+
+  const changes = [];
+  for (const [key, label] of MATERIAL_FIELDS) {
+    if (fieldChanged(key, original[key], data[key])) {
+      changes.push({
+        field: key,
+        label,
+        from: fmtFieldValue(key, original[key]),
+        to: fmtFieldValue(key, data[key]),
+        at: Date.now(),
+        editedBy: actor?.name || actor?.code || 'Unknown',
+        editedById: actor?.id || '',
+      });
+    }
+  }
+
+  if (changes.length === 0) {
+    await updateDoc(doc(db, 'orders', id), data);
+    return 0;
+  }
+
+  const update = { ...data, edited: true, changes: arrayUnion(...changes) };
+
+  // Handed-over orders are the one exception: NOT pulled back (admin uses the
+  // manual Rework action for those). Everything else → New (Edited).
+  if (original.stage !== 'handedover') {
+    update.stage = 'newedited';
+    update.stageHistory = arrayUnion({
+      stage: 'newedited',
+      fromStage: original.stage,
+      direction: 'edited',
+      by: actor?.code || actor?.name || 'system',
+      byName: actor?.name || '',
+      byId: actor?.id || '',
+      at: Date.now(),
+    });
+  }
+
+  await updateDoc(doc(db, 'orders', id), update);
+  return changes.length;
 }
 
 // Peek the next order number for display (the real one is allocated on save).

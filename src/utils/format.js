@@ -2,20 +2,32 @@
 
 export const STAGES = {
   new: { key: 'new', label: 'New', color: '#9ca3af', glow: 'glow-new' },
+  newedited: { key: 'newedited', label: 'New (Edited)', color: '#3ba9ff', glow: 'glow-blue' },
   inprogress: { key: 'inprogress', label: 'In progress', color: '#3b82f6', glow: 'glow-blue' },
   ready: { key: 'ready', label: 'Ready', color: '#22c55e', glow: 'glow-green' },
   handedover: { key: 'handedover', label: 'Handed over', color: '#14b8a6', glow: 'glow-teal' },
   rework: { key: 'rework', label: 'Rework', color: '#f59e0b', glow: 'glow-amber' },
 };
 
-// Linear pipeline (rework is an off-path detour, handled separately).
+// Linear pipeline (rework + newedited are off-path, handled separately).
 export const STAGE_ORDER = ['new', 'inprogress', 'ready', 'handedover'];
+
+// "New (Edited)" rolls up into New for filtering/counting. A vendor progresses
+// it forward exactly like a fresh New order.
+export function matchesStageFilter(stage, key) {
+  if (key === 'new') return stage === 'new' || stage === 'newedited';
+  return stage === key;
+}
 
 // Allowed stage moves per current stage, scoped by role.
 // Admin + the assigned vendor channel move orders forward/back. Team members can
 // ONLY send a Ready / Handed-over order back for rework — no other stage action.
 export const STAGE_TRANSITIONS = {
   new: [
+    { to: 'inprogress', label: 'Start work', kind: 'primary', roles: ['vendor', 'admin'] },
+  ],
+  // Edited orders progress forward exactly like New.
+  newedited: [
     { to: 'inprogress', label: 'Start work', kind: 'primary', roles: ['vendor', 'admin'] },
   ],
   inprogress: [

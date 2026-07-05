@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders, useUsers, useChannels, decorateOrders } from '../hooks/useCollections';
-import { greeting, todayLong, initials, isDone } from '../utils/format';
+import { initials, isDone, matchesStageFilter } from '../utils/format';
 import { RoleBadge } from '../components/Badges';
 import OrderCard from '../components/OrderCard';
+import GreetingMascot from '../components/GreetingMascot';
 import BottomNav from '../components/BottomNav';
 import { IcSearch, IcBell, IcPlus, IcDiamond } from '../components/Icons';
 
@@ -27,8 +28,10 @@ function DashboardHome() {
   const [stageFilter, setStageFilter] = useState(null);
   const [channelFilter, setChannelFilter] = useState('all');
 
+  const newEdited = orders.filter((o) => o.stage === 'newedited').length;
   const counts = {
-    new: orders.filter((o) => o.stage === 'new').length,
+    new: orders.filter((o) => o.stage === 'new').length + newEdited, // rolls up New (Edited)
+    newEdited,
     inprogress: orders.filter((o) => o.stage === 'inprogress').length,
     rework: orders.filter((o) => o.stage === 'rework').length,
     ready: orders.filter((o) => o.stage === 'ready').length,
@@ -36,10 +39,10 @@ function DashboardHome() {
   };
 
   const filtered = orders.filter((o) => {
-    if (stageFilter === 'overdue') return o.isOverdue;
-    if (stageFilter && o.stage !== stageFilter) return false;
     if (channelFilter !== 'all' && o.channelId !== channelFilter) return false;
-    return true;
+    if (!stageFilter) return true;
+    if (stageFilter === 'overdue') return o.isOverdue;
+    return matchesStageFilter(o.stage, stageFilter);
   });
 
   return (
@@ -53,16 +56,12 @@ function DashboardHome() {
 
       <div className="screen screen-pad-bottom">
         <div className="row-between" style={{ marginBottom: 16 }}>
-          <div>
-            <div className="muted" style={{ fontSize: 13 }}>{greeting()},</div>
-            <div style={{ fontSize: 22, fontWeight: 800 }}>{profile.name}</div>
-            <div className="faint" style={{ fontSize: 12 }}>{todayLong()}</div>
-          </div>
+          <GreetingMascot profile={profile} orders={orders} />
           <RoleBadge role={profile.role} />
         </div>
 
         <div className="stat-row four">
-          <StatCard label="New" num={counts.new} color="var(--new)" active={stageFilter === 'new'} onClick={() => setStageFilter(stageFilter === 'new' ? null : 'new')} />
+          <StatCard label="New" sub={counts.newEdited > 0 ? `${counts.newEdited} edited` : ''} num={counts.new} color="var(--new)" active={stageFilter === 'new'} onClick={() => setStageFilter(stageFilter === 'new' ? null : 'new')} />
           <StatCard label="In progress" num={counts.inprogress} color="var(--blue)" active={stageFilter === 'inprogress'} onClick={() => setStageFilter(stageFilter === 'inprogress' ? null : 'inprogress')} />
           <StatCard label="Rework" num={counts.rework} color="var(--amber)" active={stageFilter === 'rework'} onClick={() => setStageFilter(stageFilter === 'rework' ? null : 'rework')} />
           <StatCard label="Ready" num={counts.ready} color="var(--green)" active={stageFilter === 'ready'} onClick={() => setStageFilter(stageFilter === 'ready' ? null : 'ready')} />
@@ -101,11 +100,11 @@ function DashboardHome() {
   );
 }
 
-function StatCard({ label, num, color, active, onClick }) {
+function StatCard({ label, num, color, active, onClick, sub }) {
   return (
     <button className="stat-card" onClick={onClick} style={active ? { boxShadow: `0 0 0 2px ${color}, var(--shadow)` } : {}}>
       <div className="num" style={{ color }}>{num}</div>
-      <div className="lbl">{label}</div>
+      <div className="lbl">{label}{sub ? <span className="faint" style={{ display: 'block', fontSize: 10, fontWeight: 600 }}>{sub}</span> : null}</div>
     </button>
   );
 }
@@ -133,6 +132,10 @@ function VendorHome() {
       </div>
 
       <div className="screen screen-pad-bottom">
+        <div style={{ marginBottom: 16 }}>
+          <GreetingMascot profile={profile} orders={orders} />
+        </div>
+
         {overdue > 0 && (
           <div className="card glow-red" style={{ marginBottom: 14 }}>
             <div style={{ fontWeight: 800, color: 'var(--red)' }}>⚠️ {overdue} order{overdue > 1 ? 's' : ''} overdue — please prioritise</div>

@@ -33,12 +33,14 @@ export default function CreateOrder() {
   const [customLook, setCustomLook] = useState(false);
   const [images, setImages] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [original, setOriginal] = useState(null); // pristine doc, for edit diffing
 
   useEffect(() => {
     if (editing) {
       getDoc(doc(db, 'orders', id)).then((s) => {
         if (s.exists()) {
           const d = s.data();
+          setOriginal({ id: s.id, ...d });
           setForm({ ...blank, ...d, dueDate: d.dueDate?.toDate ? d.dueDate.toDate().toISOString().slice(0, 10) : (d.dueDate || '') });
           setAppOrderNo(d.appOrderNo);
           setImages(d.images || []);
@@ -104,7 +106,9 @@ export default function CreateOrder() {
       };
 
       if (editing) {
-        await updateOrder(id, payload);
+        // Diff against the pristine doc: material changes log a trail, flip the
+        // Edited badge, and pull the order back to "New (Edited)".
+        await updateOrder(id, payload, { original, actor: profile });
         if (uploadWarnings.length) alert(`Order saved, but ${uploadWarnings.join(' and ')} could not be uploaded (check Firebase Storage).`);
         nav(`/order/${id}`);
         return;

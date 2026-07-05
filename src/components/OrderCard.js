@@ -5,7 +5,7 @@ import {
 } from '../utils/format';
 import { setStage } from '../utils/actions';
 import { shareOrder } from '../utils/share';
-import { UrgencyBadge } from './Badges';
+import { UrgencyBadge, EditedBadge } from './Badges';
 import StagePipeline from './StagePipeline';
 import MediaStrip from './MediaStrip';
 import { IcWhatsApp } from './Icons';
@@ -37,6 +37,7 @@ export default function OrderCard({ order, channelCode, createdByName, inFeed })
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }} onClick={go}>
         {channelCode && <span className="chip spec-chip" style={{ fontWeight: 700 }}>💬 {channelCode}</span>}
         <span style={{ fontWeight: 700, fontSize: 16 }}>{order.itemName}</span>
+        {order.edited && <EditedBadge />}
       </div>
 
       {order.images?.length > 0 && (

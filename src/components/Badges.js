@@ -18,6 +18,15 @@ export function UrgencyBadge({ urgency }) {
   );
 }
 
+// Permanent marker once an order has ever had a material field edited.
+export function EditedBadge() {
+  return (
+    <span className="badge" style={{ background: '#3ba9ff1a', color: '#3ba9ff' }}>
+      <span className="dot" style={{ background: '#3ba9ff' }} /> Edited
+    </span>
+  );
+}
+
 export function RoleBadge({ role }) {
   if (role === 'admin') return <span className="badge badge-admin">Admin</span>;
   if (role === 'team') return <span className="badge badge-team">Team member</span>;

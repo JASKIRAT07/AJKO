@@ -2,7 +2,8 @@ import { STAGE_ORDER, STAGES } from '../utils/format';
 
 export default function StagePipeline({ stage, compact }) {
   const isRework = stage === 'rework';
-  const effective = isRework ? 'inprogress' : stage;
+  const isEdited = stage === 'newedited';
+  const effective = isRework ? 'inprogress' : (isEdited ? 'new' : stage);
   const currentIdx = STAGE_ORDER.indexOf(effective);
   const last = STAGE_ORDER.length - 1;
 
@@ -11,8 +12,10 @@ export default function StagePipeline({ stage, compact }) {
       {STAGE_ORDER.map((s, i) => {
         const reached = i <= currentIdx;
         const isCurrent = i === currentIdx;
-        const color = isRework && isCurrent ? STAGES.rework.color : STAGES[s].color;
-        const label = isRework && isCurrent ? STAGES.rework.label : STAGES[s].label;
+        const color = isRework && isCurrent ? STAGES.rework.color
+          : (isEdited && isCurrent ? STAGES.newedited.color : STAGES[s].color);
+        const label = isRework && isCurrent ? STAGES.rework.label
+          : (isEdited && isCurrent ? STAGES.newedited.label : STAGES[s].label);
         return (
           <div className="pipe-step" key={s} style={{ flex: i === last ? '0 0 auto' : 1 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>

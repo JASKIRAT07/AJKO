@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders, useChannels, decorateOrders } from '../hooks/useCollections';
+import { matchesStageFilter } from '../utils/format';
 import OrderCard from '../components/OrderCard';
 import BottomNav from '../components/BottomNav';
 import { IcSearch, IcPlus } from '../components/Icons';
@@ -29,7 +30,7 @@ export default function Orders() {
   const list = orders.filter((o) => {
     if (filter === 'all') return true;
     if (filter === 'overdue') return o.isOverdue;
-    return o.stage === filter;
+    return matchesStageFilter(o.stage, filter);
   });
 
   return (
