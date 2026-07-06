@@ -112,7 +112,7 @@ export default function OrderDetail() {
             {[...order.changes].reverse().map((c, i) => (
               <div key={i} style={{ fontSize: 13, padding: '3px 0', color: '#5f3e1c', lineHeight: 1.5 }}>
                 <b>{c.label || c.field}:</b> {c.from} → {c.to}
-                <span className="faint" style={{ fontSize: 11 }}> · {formatDate(c.at)}</span>
+                <span className="faint" style={{ fontSize: 11 }}> · {formatDateTime(c.at)}{c.editedBy ? ` · by ${c.editedBy}` : ''}</span>
               </div>
             ))}
           </div>
