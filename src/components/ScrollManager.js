@@ -41,29 +41,33 @@ export default function ScrollManager() {
       return undefined;
     }
 
-    // Restore the saved offset. List content loads async, so retry across a few
-    // frames until the page is tall enough to reach it — or the user takes over.
     const target = positions.get(key) || 0;
-    let raf;
-    let tries = 0;
+    if (target <= 0) return undefined; // nothing to restore
+
+    // The list we're returning to re-loads asynchronously, and some screens
+    // autofocus an input (which yanks scroll to the top). So keep re-asserting
+    // the saved offset every frame for a short window — until the user actually
+    // scrolls, at which point we hand control straight back to them.
     let done = false;
-    const stop = () => { done = true; };
-    const restore = () => {
+    let raf = 0;
+    const start = performance.now();
+    const cancel = () => { done = true; };
+    const loop = () => {
       if (done) return;
       window.scrollTo(0, target);
-      tries += 1;
-      if (Math.abs(window.scrollY - target) > 2 && tries < 40) {
-        raf = requestAnimationFrame(restore);
-      }
+      if (performance.now() - start < 2500) raf = requestAnimationFrame(loop);
     };
-    window.addEventListener('wheel', stop, { passive: true, once: true });
-    window.addEventListener('touchstart', stop, { passive: true, once: true });
-    raf = requestAnimationFrame(restore);
+    // A real scroll gesture (not a tap) cancels restoration immediately.
+    window.addEventListener('wheel', cancel, { passive: true, once: true });
+    window.addEventListener('touchmove', cancel, { passive: true, once: true });
+    window.addEventListener('keydown', cancel, { once: true });
+    raf = requestAnimationFrame(loop);
     return () => {
       done = true;
       if (raf) cancelAnimationFrame(raf);
-      window.removeEventListener('wheel', stop);
-      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('wheel', cancel);
+      window.removeEventListener('touchmove', cancel);
+      window.removeEventListener('keydown', cancel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

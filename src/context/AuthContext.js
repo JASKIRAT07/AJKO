@@ -9,7 +9,7 @@ import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
 
-export const AUTH_BUILD = 'scrollfix-v16';
+export const AUTH_BUILD = 'scrollfix-v17';
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
