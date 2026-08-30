@@ -15,6 +15,7 @@ import Settings from './screens/Settings';
 import Members from './screens/Members';
 import Sidebar from './components/Sidebar';
 import Splash from './components/Splash';
+import ScrollManager from './components/ScrollManager';
 
 function Shell() {
   const { fbUser, profile, loading, authError, build } = useAuth();
@@ -90,6 +91,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <ScrollManager />
         {splash ? <Splash /> : <Shell />}
       </BrowserRouter>
     </AuthProvider>
