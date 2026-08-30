@@ -20,85 +20,18 @@ async function compressImage(file, maxDim = 1280, quality = 0.7) {
   }
 }
 
-// Hard ceiling for a video upload after compression (matches the Storage rule).
+// Hard ceiling for a video upload (matches the Storage rule).
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
-
-// Best-effort, browser-native video downscale to ~720p before upload. Key rule:
-// we ONLY transcode when the browser can OUTPUT mp4/H.264 (Safari 17+, iOS 17+).
-// We never emit webm, because iOS can't play it — so a stored order video always
-// stays playable on every device. Anywhere mp4 recording isn't supported (e.g.
-// Chrome), the ORIGINAL file is returned untouched and the raised Storage limit
-// carries it. Any failure falls back to the original too.
-async function compressVideo(file, { targetHeight = 720, bitrate = 2500000 } = {}) {
-  const canRecordMp4 = typeof MediaRecorder !== 'undefined'
-    && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/mp4');
-  const canCapture = typeof HTMLCanvasElement !== 'undefined'
-    && !!HTMLCanvasElement.prototype.captureStream;
-  if (!canRecordMp4 || !canCapture) return file;
-
-  let url;
-  try {
-    url = URL.createObjectURL(file);
-    const video = document.createElement('video');
-    video.src = url; video.muted = true; video.playsInline = true; video.preload = 'auto';
-    await new Promise((res, rej) => {
-      video.onloadedmetadata = res;
-      video.onerror = () => rej(new Error('metadata'));
-    });
-    const vw = video.videoWidth || 0;
-    const vh = video.videoHeight || 0;
-    if (!vw || !vh || vh <= targetHeight) return file; // already small enough
-
-    const scale = targetHeight / vh;
-    const w = Math.max(2, Math.round((vw * scale) / 2) * 2); // even dimensions
-    const h = Math.max(2, Math.round(targetHeight / 2) * 2);
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    const out = canvas.captureStream();
-
-    // Carry the source audio track across if the browser exposes it.
-    try {
-      const src = video.captureStream ? video.captureStream() : null;
-      const a = src && src.getAudioTracks && src.getAudioTracks()[0];
-      if (a) out.addTrack(a);
-    } catch { /* no audio track available — video-only is fine */ }
-
-    const rec = new MediaRecorder(out, { mimeType: 'video/mp4', videoBitsPerSecond: bitrate });
-    const chunks = [];
-    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-    const stopped = new Promise((res) => { rec.onstop = res; });
-
-    rec.start();
-    await video.play();
-    await new Promise((res) => {
-      video.onended = res;
-      const draw = () => {
-        if (video.ended || video.paused) { res(); return; }
-        ctx.drawImage(video, 0, 0, w, h);
-        requestAnimationFrame(draw);
-      };
-      draw();
-    });
-    rec.stop();
-    await stopped;
-
-    const blob = new Blob(chunks, { type: 'video/mp4' });
-    if (!blob.size || blob.size >= file.size) return file; // no real gain
-    return new File([blob], (file.name || 'video').replace(/\.\w+$/, '') + '.mp4', { type: 'video/mp4' });
-  } catch {
-    return file; // any failure → upload the original untouched
-  } finally {
-    if (url) URL.revokeObjectURL(url);
-  }
-}
 
 export async function uploadFile(file, folder = 'orders', opts = {}) {
   let toSend;
   if (file.type?.startsWith('image')) {
     toSend = await compressImage(file, opts.maxDim || 1280, opts.quality || 0.7);
   } else if (file.type?.startsWith('video')) {
-    toSend = await compressVideo(file, { targetHeight: opts.targetHeight || 720 });
+    // Upload the phone's original video as-is. In-browser re-encoding was slow
+    // and janky on phones (it could hang the whole save), and the native mp4
+    // already plays everywhere. We only guard the size.
+    toSend = file;
     if (toSend.size > MAX_VIDEO_BYTES) {
       const err = new Error('VIDEO_TOO_LARGE');
       err.code = 'video-too-large';
