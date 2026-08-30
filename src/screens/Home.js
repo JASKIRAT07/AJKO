@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders, useUsers, useChannels, decorateOrders } from '../hooks/useCollections';
@@ -25,8 +25,15 @@ function DashboardHome() {
   const channelCode = (id) => channels.find((c) => c.id === id)?.code || '';
   const creatorName = (id) => users.find((u) => u.id === id)?.name || 'Unknown';
 
-  const [stageFilter, setStageFilter] = useState(null);
-  const [channelFilter, setChannelFilter] = useState('all');
+  // Remember the dashboard's selected channel/stage filter so returning here
+  // (e.g. Back from an order) lands on the same tab, not reset to "All channels".
+  const [stageFilter, setStageFilter] = useState(() => sessionStorage.getItem('ajko_dash_stage') || null);
+  const [channelFilter, setChannelFilter] = useState(() => sessionStorage.getItem('ajko_dash_channel') || 'all');
+  useEffect(() => {
+    if (stageFilter) sessionStorage.setItem('ajko_dash_stage', stageFilter);
+    else sessionStorage.removeItem('ajko_dash_stage');
+  }, [stageFilter]);
+  useEffect(() => { sessionStorage.setItem('ajko_dash_channel', channelFilter); }, [channelFilter]);
 
   const newEdited = orders.filter((o) => o.stage === 'newedited').length;
   const counts = {
