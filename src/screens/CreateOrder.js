@@ -78,8 +78,10 @@ export default function CreateOrder() {
           if (im._file) uploaded.push(await uploadFile(im._file));
           else uploaded.push({ url: im.url, type: im.type || 'image' });
         } catch (e) {
-          console.error('Image upload failed', e);
-          uploadWarnings.push('an image');
+          console.error('Media upload failed', e);
+          uploadWarnings.push(e && e.code === 'video-too-large'
+            ? 'a video (too large — please upload a shorter clip)'
+            : (im._file?.type?.startsWith('video') ? 'a video' : 'an image'));
         }
       }
 

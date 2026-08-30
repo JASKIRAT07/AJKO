@@ -9,7 +9,7 @@ import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
 
-export const AUTH_BUILD = 'scrollfix-v19';
+export const AUTH_BUILD = 'video-v20';
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
