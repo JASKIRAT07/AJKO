@@ -8,6 +8,7 @@ import {
   getUrgency, formatDate, formatDateTime, stageInfo, allowedTransitions,
 } from '../utils/format';
 import { setStage, deleteOrder } from '../utils/actions';
+import { getStreamPlayback } from '../utils/stream';
 import { shareOrder, prepareShareFiles } from '../utils/share';
 import { StageBadge, UrgencyBadge, EditedBadge } from '../components/Badges';
 import StagePipeline from '../components/StagePipeline';
@@ -74,6 +75,12 @@ export default function OrderDetail() {
 
       <div className="screen" style={{ paddingBottom: 100 }}>
         {order.images?.length > 0 && <MediaStrip media={order.images} single={order.images.length === 1} />}
+
+        {order.videos?.length > 0 && (
+          <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+            {order.videos.map((v) => <StreamVideo key={v.uid} uid={v.uid} />)}
+          </div>
+        )}
 
         <div style={{ marginTop: 14 }}>
           <div className="order-no" style={{ fontSize: 26 }}>{order.appOrderNo}</div>
@@ -179,6 +186,40 @@ export default function OrderDetail() {
         {canShare && <button className="btn btn-wa" style={{ flex: 1 }} onClick={() => shareOrder(order, shareFiles)}><IcWhatsApp size={18} /> Share</button>}
         {isTeam && <div style={{ flex: 1 }} />}
       </div>
+    </div>
+  );
+}
+
+// In-app Cloudflare Stream player for an order video. Fetches a short-lived
+// SIGNED playback token from the server, then embeds the player inline — the
+// user watches inside the order, no external link or redirect.
+function StreamVideo({ uid }) {
+  const [pb, setPb] = useState(null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setPb(null); setErr(false);
+    getStreamPlayback(uid)
+      .then((d) => { if (alive) setPb(d); })
+      .catch(() => { if (alive) setErr(true); });
+    return () => { alive = false; };
+  }, [uid]);
+
+  if (err) return <div className="card card-tight muted" style={{ textAlign: 'center' }}>Video unavailable right now.</div>;
+  if (!pb) return <div className="card" style={{ height: 200, display: 'grid', placeItems: 'center' }}><div className="spinner" /></div>;
+
+  const src = `https://${pb.host}/${pb.token}/iframe`;
+  return (
+    <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 14, overflow: 'hidden', background: '#000' }}>
+      <iframe
+        title="Order video"
+        src={src}
+        loading="lazy"
+        style={{ border: 0, position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+        allowFullScreen
+      />
     </div>
   );
 }

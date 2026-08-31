@@ -37,6 +37,10 @@ const WHATSAPP_TOKEN = defineSecret('WHATSAPP_TOKEN');
 const WHATSAPP_PHONE_ID = defineSecret('WHATSAPP_PHONE_ID');
 const WA_SECRETS = [WHATSAPP_TOKEN, WHATSAPP_PHONE_ID];
 
+// Cloudflare Stream (order videos). Account ID is not secret; the token is.
+const CF_ACCOUNT_ID = 'f638cad0889e1f394fe94793d056f5d1';
+const CF_STREAM_TOKEN = defineSecret('CF_STREAM_TOKEN');
+
 // ---- helpers ----------------------------------------------------------------
 function phoneVariants(raw) {
   const digits = String(raw || '').replace(/\D/g, '');
@@ -382,6 +386,62 @@ exports.dueTomorrowReminder = onSchedule({ schedule: '0 18 * * *', timeZone: 'As
     if (!v.phone) { logger.info(`WA due_tomorrow: vendor ${v.id} has no phone, skipping`); return; }
     await sendWhatsAppTemplate(v.phone, 'due_tomorrow', [String(list.length), tomorrowLabel, orderNos(list)]);
   }));
+});
+
+// ---- Cloudflare Stream: order videos (signed) ------------------------------
+// Mint a one-time direct-upload URL. The phone uploads the raw file straight to
+// Cloudflare (no transcoding on the phone). requireSignedURLs → playback needs a
+// signed token (see getStreamToken). The token never reaches the browser.
+exports.createStreamUpload = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream/direct_upload`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${CF_STREAM_TOKEN.value()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ maxDurationSeconds: 120, requireSignedURLs: true }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    logger.error('Stream direct_upload failed', data);
+    throw new HttpsError('internal', 'Could not start video upload.');
+  }
+  return { uploadURL: data.result.uploadURL, uid: data.result.uid };
+});
+
+// Mint a short-lived signed playback token for one video, plus the account's
+// stream host (derived from the thumbnail URL) so the client can embed the
+// in-app player. Requires sign-in.
+exports.getStreamToken = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const uid = String(req.data?.uid || '').trim();
+  if (!uid) throw new HttpsError('invalid-argument', 'Missing video id.');
+  const base = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream`;
+  const authHeader = { Authorization: `Bearer ${CF_STREAM_TOKEN.value()}` };
+
+  const exp = Math.floor(Date.now() / 1000) + 4 * 3600; // 4h
+  const tokRes = await fetch(`${base}/${uid}/token`, {
+    method: 'POST',
+    headers: { ...authHeader, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ exp }),
+  });
+  const tok = await tokRes.json().catch(() => ({}));
+  if (!tokRes.ok || !tok.success) {
+    logger.error('Stream token failed', tok);
+    throw new HttpsError('internal', 'Could not get video token.');
+  }
+
+  let host = 'iframe.videodelivery.net';
+  let ready = false;
+  try {
+    const detRes = await fetch(`${base}/${uid}`, { headers: authHeader });
+    const det = await detRes.json();
+    if (det.success && det.result) {
+      ready = det.result.status && det.result.status.state === 'ready';
+      if (det.result.thumbnail) host = new URL(det.result.thumbnail).host;
+    }
+  } catch (e) {
+    logger.warn('Stream details fetch failed', e);
+  }
+  return { token: tok.result.token, host, ready };
 });
 
 // ---- 5. Private pre-login lookups -------------------------------------------

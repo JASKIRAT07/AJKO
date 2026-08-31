@@ -11,6 +11,7 @@ import {
   createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel,
 } from '../utils/actions';
 import { uploadFile } from '../utils/upload';
+import { uploadVideoToStream } from '../utils/stream';
 import { IcBack, IcImage } from '../components/Icons';
 
 const blank = {
@@ -32,6 +33,7 @@ export default function CreateOrder() {
   const [customPurity, setCustomPurity] = useState(false);
   const [customLook, setCustomLook] = useState(false);
   const [images, setImages] = useState([]);
+  const [videos, setVideos] = useState([]); // {uid} (existing) or {url,_file} (new, Cloudflare Stream)
   const [busy, setBusy] = useState(false);
   const [original, setOriginal] = useState(null); // pristine doc, for edit diffing
 
@@ -44,6 +46,7 @@ export default function CreateOrder() {
           setForm({ ...blank, ...d, dueDate: d.dueDate?.toDate ? d.dueDate.toDate().toISOString().slice(0, 10) : (d.dueDate || '') });
           setAppOrderNo(d.appOrderNo);
           setImages(d.images || []);
+          setVideos(d.videos || []);
           if (d.purity && !PURITY_OPTIONS.includes(d.purity)) setCustomPurity(true);
           if (d.look && !LOOK_OPTIONS.includes(d.look)) setCustomLook(true);
         }
@@ -58,12 +61,20 @@ export default function CreateOrder() {
   const valid = form.storeOrderNo && form.itemName && form.weight && form.purity && form.look && form.dueDate && form.channelId;
 
   const onPickFiles = async (e) => {
-    const files = Array.from(e.target.files || []).slice(0, 4 - images.length);
+    // 4-item cap is shared across images + videos.
+    const files = Array.from(e.target.files || []).slice(0, Math.max(0, 4 - images.length - videos.length));
     for (const f of files) {
       const localUrl = URL.createObjectURL(f);
-      setImages((prev) => [...prev, { url: localUrl, type: f.type?.startsWith('video') ? 'video' : 'image', _file: f }]);
+      if (f.type?.startsWith('video')) {
+        // Videos go to Cloudflare Stream on save (not Firebase Storage).
+        setVideos((prev) => [...prev, { url: localUrl, _file: f }]);
+      } else {
+        setImages((prev) => [...prev, { url: localUrl, type: 'image', _file: f }]);
+      }
     }
+    e.target.value = '';
   };
+  const removeVideo = (i) => setVideos((prev) => prev.filter((_, idx) => idx !== i));
   const removeImage = (i) => setImages((prev) => prev.filter((_, idx) => idx !== i));
 
   const save = async (asDraft) => {
@@ -78,10 +89,20 @@ export default function CreateOrder() {
           if (im._file) uploaded.push(await uploadFile(im._file));
           else uploaded.push({ url: im.url, type: im.type || 'image' });
         } catch (e) {
-          console.error('Media upload failed', e);
-          uploadWarnings.push(e && e.code === 'video-too-large'
-            ? 'a video (too large — please upload a shorter clip)'
-            : (im._file?.type?.startsWith('video') ? 'a video' : 'an image'));
+          console.error('Image upload failed', e);
+          uploadWarnings.push('an image');
+        }
+      }
+
+      // Videos → Cloudflare Stream (keep existing {uid} entries, upload new files).
+      const videosOut = [];
+      for (const v of videos) {
+        try {
+          if (v.uid) videosOut.push({ uid: v.uid });
+          else if (v._file) { const { uid } = await uploadVideoToStream(v._file); videosOut.push({ uid }); }
+        } catch (e) {
+          console.error('Video upload failed', e);
+          uploadWarnings.push('a video');
         }
       }
 
@@ -104,6 +125,7 @@ export default function CreateOrder() {
         channelId,
         vendorId: null,
         images: uploaded,
+        videos: videosOut,
         isDraft: !!asDraft,
       };
 
@@ -221,17 +243,24 @@ export default function CreateOrder() {
           </div>
         </div>
 
-        <div className="section-title">Photos & videos ({images.length}/4)</div>
+        <div className="section-title">Photos & videos ({images.length + videos.length}/4)</div>
         <div className="specs-grid">
           {images.map((im, i) => (
-            <div key={i} style={{ position: 'relative', height: 110, borderRadius: 14, overflow: 'hidden', background: '#f0ece7' }}>
-              {im.type === 'video'
-                ? <video src={im.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : <img src={im.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+            <div key={`img-${i}`} style={{ position: 'relative', height: 110, borderRadius: 14, overflow: 'hidden', background: '#f0ece7' }}>
+              <img src={im.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               <button type="button" onClick={() => removeImage(i)} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,.55)', color: '#fff', borderRadius: 8, width: 26, height: 26 }}>✕</button>
             </div>
           ))}
-          {images.length < 4 && (
+          {videos.map((v, i) => (
+            <div key={`vid-${i}`} style={{ position: 'relative', height: 110, borderRadius: 14, overflow: 'hidden', background: '#000' }}>
+              {v.url
+                ? <video src={v.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+                : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 13 }}>🎥 Video</div>}
+              <span style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,.55)', color: '#fff', borderRadius: 6, fontSize: 11, padding: '2px 6px' }}>🎥 Video</span>
+              <button type="button" onClick={() => removeVideo(i)} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,.55)', color: '#fff', borderRadius: 8, width: 26, height: 26 }}>✕</button>
+            </div>
+          ))}
+          {(images.length + videos.length) < 4 && (
             <label className="card" style={{ height: 110, display: 'grid', placeItems: 'center', cursor: 'pointer', border: '1.5px dashed var(--line)', boxShadow: 'none' }}>
               <div style={{ textAlign: 'center', color: 'var(--ink-faint)' }}><IcImage size={26} /><div style={{ fontSize: 12, marginTop: 4 }}>Add media</div></div>
               <input type="file" accept="image/*,video/*" multiple hidden onChange={onPickFiles} />
