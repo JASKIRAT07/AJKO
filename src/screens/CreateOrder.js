@@ -36,6 +36,9 @@ export default function CreateOrder() {
   const [videos, setVideos] = useState([]); // {uid} (existing) or {url,_file} (new, Cloudflare Stream)
   const [busy, setBusy] = useState(false);
   const [original, setOriginal] = useState(null); // pristine doc, for edit diffing
+  // Edit forms must wait for the order's values before rendering fields, or the
+  // first open (before the doc is cached) paints a blank form. Create = ready now.
+  const [loaded, setLoaded] = useState(!editing);
 
   useEffect(() => {
     if (editing) {
@@ -50,7 +53,7 @@ export default function CreateOrder() {
           if (d.purity && !PURITY_OPTIONS.includes(d.purity)) setCustomPurity(true);
           if (d.look && !LOOK_OPTIONS.includes(d.look)) setCustomLook(true);
         }
-      });
+      }).catch((e) => console.error('Edit load failed', e)).finally(() => setLoaded(true));
     } else {
       getNextOrderNoPreview().then(setAppOrderNo).catch(() => setAppOrderNo('AO-001'));
     }
@@ -166,6 +169,20 @@ export default function CreateOrder() {
   };
 
   const noChannels = channels.length === 0;
+
+  // Don't render the fields until the order's values are in — avoids the blank
+  // form on the first Edit open (before the doc is cached).
+  if (editing && !loaded) {
+    return (
+      <div className="app-shell">
+        <div className="topbar">
+          <button className="icon-btn" onClick={() => nav(-1)}><IcBack size={18} /></button>
+          <h1>Edit order</h1>
+        </div>
+        <div className="full-center" style={{ minHeight: '60vh' }}><div className="spinner" /></div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
