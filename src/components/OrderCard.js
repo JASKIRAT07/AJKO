@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -12,24 +12,41 @@ import StagePipeline from './StagePipeline';
 import MediaStrip from './MediaStrip';
 import { IcWhatsApp } from './Icons';
 
-// Card preview thumbnail for a Cloudflare Stream video. Fetches the signed
-// token (cached), shows the signed thumbnail with a play overlay, and falls
-// back to a neutral tile while processing or on any error (never a broken image).
+// Card preview thumbnail for a Cloudflare Stream video. LAZY: does nothing until
+// the tile scrolls near the viewport, then loads a SMALL thumbnail (never the
+// video file). Falls back to a neutral tile while processing / on error.
 function VideoThumb({ uid, onOpen }) {
+  const ref = useRef(null);
+  const [inView, setInView] = useState(false);
   const [pb, setPb] = useState(null);
   const [failed, setFailed] = useState(false);
+
+  // Only start any work once the tile is near the viewport.
   useEffect(() => {
+    const el = ref.current;
+    if (!el || inView) return undefined;
+    if (typeof IntersectionObserver === 'undefined') { setInView(true); return undefined; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { setInView(true); io.disconnect(); }
+    }, { rootMargin: '250px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [inView]);
+
+  useEffect(() => {
+    if (!inView) return undefined;
     let alive = true;
     getStreamPlayback(uid).then((d) => { if (alive) setPb(d); }).catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; };
-  }, [uid]);
+  }, [inView, uid]);
 
-  const url = !failed ? streamThumbUrl(pb) : null;
-  const processing = !failed && (!pb || !pb.ready);
+  const base = !failed ? streamThumbUrl(pb) : null;
+  const url = base ? `${base}?width=400&height=400&fit=crop` : null; // small, not full-res
+  const processing = inView && !failed && (!pb || !pb.ready);
   return (
-    <div onClick={onOpen} style={{ position: 'relative', width: 150, height: 150, minWidth: 150, flexShrink: 0, borderRadius: 14, overflow: 'hidden', background: '#111', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+    <div ref={ref} onClick={onOpen} style={{ position: 'relative', width: 150, height: 150, minWidth: 150, flexShrink: 0, borderRadius: 14, overflow: 'hidden', background: '#111', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
       {url
-        ? <img src={url} alt="" onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ? <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         : <div style={{ color: '#fff', opacity: 0.75, fontSize: 12, textAlign: 'center', padding: 6 }}>{processing ? '🎥 Processing…' : '🎥 Video'}</div>}
       <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
         <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'rgba(0,0,0,.5)', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 16, paddingLeft: 3 }}>▶</div>

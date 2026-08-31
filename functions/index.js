@@ -397,7 +397,9 @@ exports.createStreamUpload = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) 
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream/direct_upload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${CF_STREAM_TOKEN.value()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ maxDurationSeconds: 120, requireSignedURLs: true }),
+    // Public playback: the jewellery clips are non-sensitive and the WhatsApp
+    // watch link must keep working for karigars days later, no signed token.
+    body: JSON.stringify({ maxDurationSeconds: 120, requireSignedURLs: false }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
@@ -405,6 +407,54 @@ exports.createStreamUpload = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) 
     throw new HttpsError('internal', 'Could not start video upload.');
   }
   return { uploadURL: data.result.uploadURL, uid: data.result.uid };
+});
+
+// Public playback info for one video (host + duration + ready). No signed token
+// — the video is public, so playback is <host>/<uid>/iframe. Used by the in-app
+// player and the order-card thumbnail.
+async function fetchStreamDetails(uid) {
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream/${uid}`, {
+    headers: { Authorization: `Bearer ${CF_STREAM_TOKEN.value()}` },
+  });
+  const d = await res.json().catch(() => ({}));
+  let host = 'iframe.videodelivery.net';
+  let ready = false;
+  let duration = 0;
+  if (d.success && d.result) {
+    ready = d.result.status && d.result.status.state === 'ready';
+    duration = d.result.duration || 0;
+    if (d.result.thumbnail) { try { host = new URL(d.result.thumbnail).host; } catch (e) { /* keep default */ } }
+  }
+  return { uid, host, ready, duration };
+}
+
+exports.getStreamInfo = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const uid = String(req.data?.uid || '').trim();
+  if (!uid) throw new HttpsError('invalid-argument', 'Missing video id.');
+  try {
+    return await fetchStreamDetails(uid);
+  } catch (e) {
+    logger.warn('getStreamInfo failed', uid, e);
+    return { uid, host: 'iframe.videodelivery.net', ready: false, duration: 0 };
+  }
+});
+
+// PUBLIC (no auth): data for the branded watch page — the order's number/name
+// and all its videos' playback info. Reads the order with admin privileges and
+// returns ONLY non-sensitive fields.
+exports.getWatchData = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) => {
+  const orderId = String(req.data?.orderId || '').trim();
+  if (!orderId) return { found: false };
+  const snap = await db.collection('orders').doc(orderId).get();
+  if (!snap.exists) return { found: false };
+  const o = snap.data();
+  const vids = Array.isArray(o.videos) ? o.videos : [];
+  const videos = await Promise.all(vids.map(async (v) => {
+    try { return await fetchStreamDetails(v.uid); }
+    catch (e) { logger.warn('watch details failed', v.uid, e); return { uid: v.uid, host: 'iframe.videodelivery.net', ready: false, duration: 0 }; }
+  }));
+  return { found: true, appOrderNo: o.appOrderNo || '', itemName: o.itemName || '', videos };
 });
 
 // Mint a short-lived signed playback token for one video, plus the account's

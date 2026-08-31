@@ -196,10 +196,11 @@ export default function OrderDetail() {
 function StreamVideo({ uid }) {
   const [pb, setPb] = useState(null);
   const [err, setErr] = useState(false);
+  const [playing, setPlaying] = useState(false); // player mounts only on tap
 
   useEffect(() => {
     let alive = true;
-    setPb(null); setErr(false);
+    setPb(null); setErr(false); setPlaying(false);
     getStreamPlayback(uid)
       .then((d) => { if (alive) setPb(d); })
       .catch(() => { if (alive) setErr(true); });
@@ -208,14 +209,28 @@ function StreamVideo({ uid }) {
 
   if (err) return <div className="card card-tight muted" style={{ textAlign: 'center' }}>Video unavailable right now.</div>;
   if (!pb) return <div className="card" style={{ height: 200, display: 'grid', placeItems: 'center' }}><div className="spinner" /></div>;
+  if (!pb.ready) return <div className="card" style={{ height: 200, display: 'grid', placeItems: 'center', color: 'var(--ink-faint)' }}>🎥 Processing…</div>;
 
-  const src = `https://${pb.host}/${pb.token}/iframe`;
+  const box = { position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 14, overflow: 'hidden', background: '#000' };
+
+  // Poster only until the user taps — the player/video is NOT initialised on open.
+  if (!playing) {
+    const poster = `https://${pb.host}/${pb.uid}/thumbnails/thumbnail.jpg?width=800`;
+    return (
+      <div style={{ ...box, cursor: 'pointer' }} onClick={() => setPlaying(true)}>
+        <img src={poster} alt="" loading="lazy" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(255,107,53,.92)', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 22, paddingLeft: 4 }}>▶</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 14, overflow: 'hidden', background: '#000' }}>
+    <div style={box}>
       <iframe
         title="Order video"
-        src={src}
-        loading="lazy"
+        src={`https://${pb.host}/${pb.uid}/iframe?autoplay=true`}
         style={{ border: 0, position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
         allowFullScreen

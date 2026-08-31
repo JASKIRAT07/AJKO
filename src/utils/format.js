@@ -190,6 +190,11 @@ export function whatsappMessage(order, { withLinks = false } = {}) {
     lines.push('', '🖼️ Media:');
     images.forEach((m) => lines.push(typeof m === 'string' ? m : m.url));
   }
+  // One watch-page link per order when it has video(s). Best-effort: needs the
+  // order's doc id (present on saved orders / the share button).
+  if (order.videos && order.videos.length && order.id) {
+    lines.push('', '🎥 *वीडियो देखो, नीचे दिए गए लिंक पर* 👇', `https://ajko.pages.dev/watch/${order.id}`);
+  }
   lines.push('', '— AJKO');
   return lines.join('\n');
 }

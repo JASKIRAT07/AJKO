@@ -9,7 +9,7 @@ import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
 
-export const AUTH_BUILD = 'stream-v23';
+export const AUTH_BUILD = 'watch-v24';
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);

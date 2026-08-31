@@ -19,24 +19,37 @@ export async function uploadVideoToStream(file) {
   return { uid };
 }
 
-// Get a short-lived signed playback token + host (used for both the in-app
-// player AND the card thumbnail). Returns { token, host, ready }.
-// Cached per-uid once the video is ready, so a list of video cards doesn't
-// re-mint tokens on every render (tokens are valid ~4h).
+// Public playback info for a video (host + ready + duration). Videos are public
+// (unsigned), so playback/thumbnail use the uid directly — no token. Cached
+// per-uid once ready so a list of video cards doesn't re-hit the function.
 const pbCache = new Map(); // uid -> { data, at }
-const PB_TTL = 3.5 * 60 * 60 * 1000;
+const PB_TTL = 60 * 60 * 1000;
 
 export async function getStreamPlayback(uid) {
   const hit = pbCache.get(uid);
   if (hit && (Date.now() - hit.at) < PB_TTL) return hit.data;
-  const get = httpsCallable(functions, 'getStreamToken');
+  const get = httpsCallable(functions, 'getStreamInfo');
   const { data } = await get({ uid });
-  if (data && data.ready) pbCache.set(uid, { data, at: Date.now() }); // only cache ready
-  return data;
+  const info = { ...data, uid };
+  if (info && info.ready) pbCache.set(uid, { data: info, at: Date.now() }); // only cache ready
+  return info;
 }
 
-// Signed thumbnail URL for a video (private videos require the signed token).
+// Public thumbnail URL (unsigned video → uid in the path, no token).
 export function streamThumbUrl(pb) {
-  if (!pb || !pb.ready || !pb.host || !pb.token) return null;
-  return `https://${pb.host}/${pb.token}/thumbnails/thumbnail.jpg`;
+  if (!pb || !pb.ready || !pb.host || !pb.uid) return null;
+  return `https://${pb.host}/${pb.uid}/thumbnails/thumbnail.jpg`;
+}
+
+// Public iframe player URL for an unsigned video.
+export function streamIframeUrl(host, uid) {
+  if (!host || !uid) return null;
+  return `https://${host}/${uid}/iframe`;
+}
+
+// PUBLIC watch-page data (no login): order number/name + all its videos.
+export async function getWatchData(orderId) {
+  const get = httpsCallable(functions, 'getWatchData');
+  const { data } = await get({ orderId });
+  return data;
 }

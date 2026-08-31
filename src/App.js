@@ -16,6 +16,7 @@ import Members from './screens/Members';
 import Sidebar from './components/Sidebar';
 import Splash from './components/Splash';
 import ScrollManager from './components/ScrollManager';
+import Watch from './screens/Watch';
 
 function Shell() {
   const { fbUser, profile, loading, authError, build } = useAuth();
@@ -92,7 +93,11 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <ScrollManager />
-        {splash ? <Splash /> : <Shell />}
+        <Routes>
+          {/* Public branded video watch page — no login (shared with karigars). */}
+          <Route path="/watch/:orderId" element={<Watch />} />
+          <Route path="*" element={splash ? <Splash /> : <Shell />} />
+        </Routes>
       </BrowserRouter>
     </AuthProvider>
   );
