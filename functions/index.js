@@ -27,9 +27,16 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
+const ffmpegPath = require('ffmpeg-static');
 
 admin.initializeApp();
 const db = admin.firestore();
+const STORAGE_BUCKET = 'ajko-48799.firebasestorage.app';
 setGlobalOptions({ region: 'us-central1', maxInstances: 10 });
 
 // WhatsApp Cloud API credentials (set via `firebase functions:secrets:set`).
@@ -514,6 +521,54 @@ exports.deleteStreamVideos = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) 
     }
   }));
   return { deleted, requested: uids.length };
+});
+
+// Convert an uploaded voice note to WhatsApp-safe m4a (AAC). The phone records
+// mp4 (iOS) or webm (Android); this normalizes both to m4a so playback + share
+// work everywhere. Downloads the raw file, runs ffmpeg, stores the converted
+// file (with a Firebase download token), deletes the raw. Returns { url }.
+exports.convertVoiceNote = onCall({ memory: '512MiB', timeoutSeconds: 120 }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const srcPath = String(req.data?.path || '');
+  if (!srcPath.startsWith('voice/')) throw new HttpsError('invalid-argument', 'Bad path.');
+
+  const bucket = admin.storage().bucket(STORAGE_BUCKET);
+  const stamp = `${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const tmpIn = path.join(os.tmpdir(), `vn_in_${stamp}`);
+  const tmpOut = path.join(os.tmpdir(), `vn_out_${stamp}.m4a`);
+  const outPath = `voice/${stamp}.m4a`;
+
+  try {
+    await bucket.file(srcPath).download({ destination: tmpIn });
+
+    await new Promise((resolve, reject) => {
+      const args = ['-i', tmpIn, '-vn', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', '-y', tmpOut];
+      const proc = spawn(ffmpegPath, args);
+      let errOut = '';
+      proc.stderr.on('data', (d) => { errOut += d.toString(); });
+      proc.on('error', reject);
+      proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg ${code}: ${errOut.slice(-400)}`))));
+    });
+
+    const token = crypto.randomUUID();
+    await bucket.upload(tmpOut, {
+      destination: outPath,
+      metadata: { contentType: 'audio/mp4', metadata: { firebaseStorageDownloadTokens: token } },
+    });
+
+    // Best-effort cleanup of the original + temp files.
+    await bucket.file(srcPath).delete().catch(() => {});
+    try { fs.unlinkSync(tmpIn); } catch (e) { /* noop */ }
+    try { fs.unlinkSync(tmpOut); } catch (e) { /* noop */ }
+
+    const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(outPath)}?alt=media&token=${token}`;
+    return { url, name: 'Voice note' };
+  } catch (e) {
+    logger.error('convertVoiceNote failed', e);
+    try { fs.unlinkSync(tmpIn); } catch (err) { /* noop */ }
+    try { fs.unlinkSync(tmpOut); } catch (err) { /* noop */ }
+    throw new HttpsError('internal', 'Voice conversion failed.');
+  }
 });
 
 // ---- 5. Private pre-login lookups -------------------------------------------

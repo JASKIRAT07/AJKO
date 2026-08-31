@@ -10,7 +10,8 @@ import {
 import {
   createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel,
 } from '../utils/actions';
-import { uploadFile, uploadBlob, supportedAudioMime } from '../utils/upload';
+import { uploadFile, supportedAudioMime } from '../utils/upload';
+import { uploadAndConvertVoice } from '../utils/voice';
 import { beginStreamUpload } from '../utils/videoUpload';
 import VideoRecorder from '../components/VideoRecorder';
 import { IcBack, IcImage, IcMic } from '../components/Icons';
@@ -59,7 +60,7 @@ export default function CreateOrder() {
           setAppOrderNo(d.appOrderNo);
           setImages(d.images || []);
           setVideos((d.videos || []).map((v) => ({ key: (videoKeyRef.current += 1), uid: v.uid, status: 'ready', progress: 100 })));
-          setVoiceNote(d.voiceNote || null);
+          setVoiceNote(d.voiceNote ? { status: 'ready', url: d.voiceNote.url, name: d.voiceNote.name || 'Voice note' } : null);
           if (d.purity && !PURITY_OPTIONS.includes(d.purity)) setCustomPurity(true);
           if (d.look && !LOOK_OPTIONS.includes(d.look)) setCustomLook(true);
         }
@@ -115,7 +116,17 @@ export default function CreateOrder() {
       rec.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: rec.mimeType || mime || 'audio/mp4' });
         stream.getTracks().forEach((t) => t.stop());
-        setVoiceNote({ url: URL.createObjectURL(blob), _blob: blob });
+        // Convert to WhatsApp-safe m4a server-side in the background.
+        const previewUrl = URL.createObjectURL(blob);
+        const promise = uploadAndConvertVoice(blob);
+        setVoiceNote({ status: 'processing', previewUrl, promise });
+        promise
+          .then((res) => setVoiceNote((prev) => (prev && prev.previewUrl === previewUrl
+            ? { status: 'ready', url: res.url, name: res.name, previewUrl } : prev)))
+          .catch((e) => {
+            console.error('Voice convert failed', e);
+            setVoiceNote((prev) => (prev && prev.previewUrl === previewUrl ? { status: 'error', previewUrl } : prev));
+          });
       };
       rec.start(); recRef.current = rec; setRecording(true);
     } catch { alert('Microphone permission needed.'); }
@@ -150,21 +161,20 @@ export default function CreateOrder() {
         else uploadWarnings.push('a video');
       }
 
-      // Voice note → Firebase Storage (upload only on save; keep existing as-is).
+      // Voice note → the server-converted m4a. If still converting, wait briefly
+      // (audio is tiny); a failure never blocks the order — the note is skipped.
       let voiceNoteOut = null;
       try {
-        if (voiceNote && voiceNote._blob) {
-          const url = await uploadBlob(voiceNote._blob, 'voice');
-          voiceNoteOut = { url, name: 'Voice note' };
-        } else if (voiceNote && voiceNote.url) {
+        if (voiceNote && voiceNote.status === 'ready' && voiceNote.url) {
           voiceNoteOut = { url: voiceNote.url, name: voiceNote.name || 'Voice note' };
+        } else if (voiceNote && voiceNote.status === 'processing' && voiceNote.promise) {
+          const res = await voiceNote.promise;
+          voiceNoteOut = { url: res.url, name: res.name || 'Voice note' };
         }
       } catch (e) {
-        console.error('Voice note upload failed', e);
+        console.error('Voice note failed', e);
         uploadWarnings.push('a voice note');
-        // Preserve an already-saved note if the (re)upload failed.
-        voiceNoteOut = voiceNote && voiceNote.url && !voiceNote._blob
-          ? { url: voiceNote.url, name: voiceNote.name || 'Voice note' } : null;
+        voiceNoteOut = null;
       }
 
       const channelId = form.channelId;
@@ -373,15 +383,26 @@ export default function CreateOrder() {
         )}
 
         <div className="section-title">Voice note</div>
-        {voiceNote ? (
+        {!voiceNote ? (
+          <button type="button" className={`btn ${recording ? 'btn-danger' : 'btn-ghost'} btn-block`} onClick={toggleRec} style={{ gap: 8 }}>
+            <IcMic size={18} /> {recording ? 'Stop recording' : 'Record voice note 🎤'}
+          </button>
+        ) : voiceNote.status === 'processing' ? (
+          <div className="card card-tight" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="vn-pulse" style={{ fontSize: 18 }}>🎤</span>
+            <span className="vn-pulse muted" style={{ flex: 1 }}>Processing voice note…</span>
+            <button type="button" className="btn btn-danger" style={{ flex: '0 0 auto', padding: '9px 12px' }} onClick={removeVoice}>Delete</button>
+          </div>
+        ) : voiceNote.status === 'error' ? (
+          <div className="card card-tight" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="muted" style={{ flex: 1 }}>Couldn’t process the voice note.</span>
+            <button type="button" className="btn btn-ghost" style={{ flex: '0 0 auto', padding: '9px 12px' }} onClick={() => setVoiceNote(null)}>Record again</button>
+          </div>
+        ) : (
           <div className="card card-tight" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <audio src={voiceNote.url} controls preload="none" style={{ flex: 1, height: 38, maxWidth: '100%' }} />
             <button type="button" className="btn btn-danger" style={{ flex: '0 0 auto', padding: '9px 12px' }} onClick={removeVoice}>Delete</button>
           </div>
-        ) : (
-          <button type="button" className={`btn ${recording ? 'btn-danger' : 'btn-ghost'} btn-block`} onClick={toggleRec} style={{ gap: 8 }}>
-            <IcMic size={18} /> {recording ? 'Stop recording' : 'Record voice note 🎤'}
-          </button>
         )}
 
         <div className="section-title">WhatsApp preview</div>
