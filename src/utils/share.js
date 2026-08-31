@@ -58,33 +58,38 @@ export async function shareOrder(order, prefetchedFiles) {
 
   let files = prefetchedFiles;
   if (!files) files = await prepareShareFiles(order);
-  const built = files ? files.length : 0;
-  const wanted = (order.images || []).length;
+  files = files || [];
 
-  // Decide the shareable set synchronously (no await before navigator.share).
-  let toShare = null; let mode = 'text'; let reason = '';
-  if (built) {
-    const can = (f) => !navigator.canShare || navigator.canShare({ files: f });
-    if (can(files)) { toShare = files; mode = 'files'; }
-    else {
-      const imgs = files.filter((f) => f.type.startsWith('image'));
-      if (imgs.length && can(imgs)) { toShare = imgs; mode = 'images'; }
-      else { reason = 'canShare({files}) = false'; }
-    }
-  } else {
-    reason = `0 of ${wanted} files loaded (CORS or fetch blocked)`;
-  }
+  // Split by TYPE so each renders correctly in WhatsApp. A single share with
+  // BOTH images and audio makes WhatsApp show everything as generic documents;
+  // it only shows photos when the share is images-only. So images go as their
+  // own images-only share (→ photos), and the voice note is shared as audio.
+  const images = files.filter((f) => f.type.startsWith('image'));
+  const audio = files.filter((f) => f.type.startsWith('audio'));
+  const can = (f) => !navigator.canShare || navigator.canShare({ files: f });
+
+  // Primary share: images-as-photos when present; otherwise the voice note.
+  let primary = null; let mode = 'text';
+  if (images.length && can(images)) { primary = images; mode = 'images'; }
+  else if (audio.length && can(audio)) { primary = audio; mode = 'audio'; }
 
   sharing = true;
   try {
-    if (toShare) { await navigator.share({ text, files: toShare }); return { mode, built, wanted }; }
-    await navigator.share({ text });
-    return { mode: 'text', built, wanted, reason: reason || 'no files to attach' };
+    if (primary) await navigator.share({ text, files: primary });
+    else await navigator.share({ text });
+
+    // If images went as photos AND there's a voice note, attempt a second,
+    // separate share for the audio (best-effort — some platforms block the
+    // follow-up; images already shared as photos, which is the priority).
+    if (mode === 'images' && audio.length && can(audio)) {
+      try { await navigator.share({ files: audio }); } catch (e) { /* best-effort */ }
+    }
+    return { mode };
   } catch (e) {
     if (e && e.name === 'AbortError') return { mode: 'cancel' };
     if (e && e.name === 'InvalidStateError') return { mode: 'busy', reason: 'share already in progress' };
     window.open(whatsappUrl(order), '_blank');
-    return { mode: 'link', reason: `${e?.name || ''} ${e?.message || ''}`.trim(), built, wanted };
+    return { mode: 'link', reason: `${e?.name || ''} ${e?.message || ''}`.trim() };
   } finally {
     sharing = false;
   }
