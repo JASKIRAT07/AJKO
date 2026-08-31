@@ -12,12 +12,21 @@ async function urlToFile(url, name) {
 // the tap — iOS Safari rejects file shares that come after an await.
 export async function prepareShareFiles(order) {
   if (!navigator.share || !order) return [];
-  // Images only — attach real image files to the share sheet.
+  // Images first — attach real image files to the share sheet.
   const sources = (order.images || []).slice(0, 4)
     .map((m, i) => ({ url: typeof m === 'string' ? m : m.url, name: `${order.appOrderNo || 'order'}-${i + 1}` }));
   const built = await Promise.all(sources.map((s) => urlToFile(s.url, s.name).catch(() => null)));
   // Keep only real image files so an odd content-type can't poison the share.
-  return built.filter((f) => f && f.type.startsWith('image'));
+  const images = built.filter((f) => f && f.type.startsWith('image'));
+
+  // Voice note (if any) attached AFTER the images. Best-effort — a failure here
+  // must never drop the images or break the share.
+  let voice = null;
+  if (order.voiceNote && order.voiceNote.url) {
+    voice = await urlToFile(order.voiceNote.url, `${order.appOrderNo || 'order'}-voice`).catch(() => null);
+    if (voice && !voice.type.startsWith('audio')) voice = null;
+  }
+  return voice ? [...images, voice] : images;
 }
 
 // Guard so a double-tap can't call navigator.share() twice (the second throws

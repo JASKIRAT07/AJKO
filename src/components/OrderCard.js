@@ -102,6 +102,8 @@ export default function OrderCard({ order, channelCode, createdByName, inFeed })
         {order.purity && <span className="chip spec-chip">✨ {order.purity}</span>}
         {order.look && <span className="chip spec-chip">🎨 {order.look}</span>}
         {order.dueDate && <span className="chip spec-chip">📅 {countdownLabel(order.dueDate)}</span>}
+        {/* Indicator only — the audio file is NOT loaded here, only in the order. */}
+        {order.voiceNote && <span className="chip spec-chip">🎤 voice note</span>}
       </div>
 
       <div style={{ margin: '12px 0 8px' }} onClick={go}><StagePipeline stage={order.stage} compact /></div>

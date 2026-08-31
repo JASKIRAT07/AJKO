@@ -186,6 +186,7 @@ export function whatsappMessage(order, { withLinks = false } = {}) {
   if (order.extraDetails) lines.push(`🗒️ Extra details: ${order.extraDetails}`);
   lines.push(`🧪 Sample taken: ${order.sampleTaken ? 'Yes' : 'No'}`);
   if (images.length) lines.push(`📎 ${images.length} image${images.length === 1 ? '' : 's'} attached`);
+  if (order.voiceNote) lines.push('🎤 Voice note attached');
   if (withLinks && images.length) {
     lines.push('', '🖼️ Media:');
     images.forEach((m) => lines.push(typeof m === 'string' ? m : m.url));

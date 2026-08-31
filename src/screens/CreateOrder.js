@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -10,9 +10,9 @@ import {
 import {
   createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel,
 } from '../utils/actions';
-import { uploadFile } from '../utils/upload';
+import { uploadFile, uploadBlob, supportedAudioMime } from '../utils/upload';
 import { uploadVideoToStream } from '../utils/stream';
-import { IcBack, IcImage } from '../components/Icons';
+import { IcBack, IcImage, IcMic } from '../components/Icons';
 
 const blank = {
   storeOrderNo: '', itemName: '', weight: '', purity: '', look: '',
@@ -34,6 +34,11 @@ export default function CreateOrder() {
   const [customLook, setCustomLook] = useState(false);
   const [images, setImages] = useState([]);
   const [videos, setVideos] = useState([]); // {uid} (existing) or {url,_file} (new, Cloudflare Stream)
+  // Single voice note per order: existing {url,name} OR a new local {url(blob),_blob}.
+  const [voiceNote, setVoiceNote] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const recRef = useRef(null);
+  const chunksRef = useRef([]);
   const [busy, setBusy] = useState(false);
   const [original, setOriginal] = useState(null); // pristine doc, for edit diffing
   // Edit forms must wait for the order's values before rendering fields, or the
@@ -50,6 +55,7 @@ export default function CreateOrder() {
           setAppOrderNo(d.appOrderNo);
           setImages(d.images || []);
           setVideos(d.videos || []);
+          setVoiceNote(d.voiceNote || null);
           if (d.purity && !PURITY_OPTIONS.includes(d.purity)) setCustomPurity(true);
           if (d.look && !LOOK_OPTIONS.includes(d.look)) setCustomLook(true);
         }
@@ -80,6 +86,26 @@ export default function CreateOrder() {
   const removeVideo = (i) => setVideos((prev) => prev.filter((_, idx) => idx !== i));
   const removeImage = (i) => setImages((prev) => prev.filter((_, idx) => idx !== i));
 
+  // Voice note — reuse the proven chat recorder. Records in-app; the blob is
+  // kept locally (preview) and only uploaded to Firebase Storage on save.
+  const toggleRec = async () => {
+    if (recording) { recRef.current?.stop(); setRecording(false); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = supportedAudioMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      rec.ondataavailable = (ev) => chunksRef.current.push(ev.data);
+      rec.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || mime || 'audio/mp4' });
+        stream.getTracks().forEach((t) => t.stop());
+        setVoiceNote({ url: URL.createObjectURL(blob), _blob: blob });
+      };
+      rec.start(); recRef.current = rec; setRecording(true);
+    } catch { alert('Microphone permission needed.'); }
+  };
+  const removeVoice = () => { if (recording) { recRef.current?.stop(); setRecording(false); } setVoiceNote(null); };
+
   const save = async (asDraft) => {
     if (!asDraft && !valid) return;
     setBusy(true);
@@ -109,6 +135,23 @@ export default function CreateOrder() {
         }
       }
 
+      // Voice note → Firebase Storage (upload only on save; keep existing as-is).
+      let voiceNoteOut = null;
+      try {
+        if (voiceNote && voiceNote._blob) {
+          const url = await uploadBlob(voiceNote._blob, 'voice');
+          voiceNoteOut = { url, name: 'Voice note' };
+        } else if (voiceNote && voiceNote.url) {
+          voiceNoteOut = { url: voiceNote.url, name: voiceNote.name || 'Voice note' };
+        }
+      } catch (e) {
+        console.error('Voice note upload failed', e);
+        uploadWarnings.push('a voice note');
+        // Preserve an already-saved note if the (re)upload failed.
+        voiceNoteOut = voiceNote && voiceNote.url && !voiceNote._blob
+          ? { url: voiceNote.url, name: voiceNote.name || 'Voice note' } : null;
+      }
+
       const channelId = form.channelId;
 
       const payload = {
@@ -129,6 +172,7 @@ export default function CreateOrder() {
         vendorId: null,
         images: uploaded,
         videos: videosOut,
+        voiceNote: voiceNoteOut,
         isDraft: !!asDraft,
       };
 
@@ -284,6 +328,18 @@ export default function CreateOrder() {
             </label>
           )}
         </div>
+
+        <div className="section-title">Voice note</div>
+        {voiceNote ? (
+          <div className="card card-tight" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <audio src={voiceNote.url} controls preload="none" style={{ flex: 1, height: 38, maxWidth: '100%' }} />
+            <button type="button" className="btn btn-danger" style={{ flex: '0 0 auto', padding: '9px 12px' }} onClick={removeVoice}>Delete</button>
+          </div>
+        ) : (
+          <button type="button" className={`btn ${recording ? 'btn-danger' : 'btn-ghost'} btn-block`} onClick={toggleRec} style={{ gap: 8 }}>
+            <IcMic size={18} /> {recording ? 'Stop recording' : 'Record voice note 🎤'}
+          </button>
+        )}
 
         <div className="section-title">WhatsApp preview</div>
         <div className="card" style={{ background: '#e7ffe9', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6 }}>{preview}</div>

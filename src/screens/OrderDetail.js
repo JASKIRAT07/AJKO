@@ -82,6 +82,14 @@ export default function OrderDetail() {
           </div>
         )}
 
+        {order.voiceNote?.url && (
+          <div className="card card-tight" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18 }}>🎤</span>
+            {/* preload="none" → the audio file loads only when the user taps play. */}
+            <audio src={order.voiceNote.url} controls preload="none" style={{ flex: 1, height: 38, maxWidth: '100%' }} />
+          </div>
+        )}
+
         <div style={{ marginTop: 14 }}>
           <div className="order-no" style={{ fontSize: 26 }}>{order.appOrderNo}</div>
           <div className="faint" style={{ fontSize: 13, marginTop: 2 }}>Store #{order.storeOrderNo}</div>
