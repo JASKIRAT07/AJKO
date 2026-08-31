@@ -11,7 +11,8 @@ import {
   createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel,
 } from '../utils/actions';
 import { uploadFile, uploadBlob, supportedAudioMime } from '../utils/upload';
-import { uploadVideoToStream } from '../utils/stream';
+import { beginStreamUpload } from '../utils/videoUpload';
+import VideoRecorder from '../components/VideoRecorder';
 import { IcBack, IcImage, IcMic } from '../components/Icons';
 
 const blank = {
@@ -33,7 +34,10 @@ export default function CreateOrder() {
   const [customPurity, setCustomPurity] = useState(false);
   const [customLook, setCustomLook] = useState(false);
   const [images, setImages] = useState([]);
-  const [videos, setVideos] = useState([]); // {uid} (existing) or {url,_file} (new, Cloudflare Stream)
+  // Each entry: { key, uid?, url?, status: 'uploading'|'processing'|'ready'|'error', progress }.
+  const [videos, setVideos] = useState([]);
+  const [showRecorder, setShowRecorder] = useState(false);
+  const videoKeyRef = useRef(0);
   // Single voice note per order: existing {url,name} OR a new local {url(blob),_blob}.
   const [voiceNote, setVoiceNote] = useState(null);
   const [recording, setRecording] = useState(false);
@@ -54,7 +58,7 @@ export default function CreateOrder() {
           setForm({ ...blank, ...d, dueDate: d.dueDate?.toDate ? d.dueDate.toDate().toISOString().slice(0, 10) : (d.dueDate || '') });
           setAppOrderNo(d.appOrderNo);
           setImages(d.images || []);
-          setVideos(d.videos || []);
+          setVideos((d.videos || []).map((v) => ({ key: (videoKeyRef.current += 1), uid: v.uid, status: 'ready', progress: 100 })));
           setVoiceNote(d.voiceNote || null);
           if (d.purity && !PURITY_OPTIONS.includes(d.purity)) setCustomPurity(true);
           if (d.look && !LOOK_OPTIONS.includes(d.look)) setCustomLook(true);
@@ -69,21 +73,33 @@ export default function CreateOrder() {
   const preview = useMemo(() => whatsappMessage({ ...form, appOrderNo, images }), [form, appOrderNo, images]);
   const valid = form.storeOrderNo && form.itemName && form.weight && form.purity && form.look && form.dueDate && form.channelId;
 
+  // Start a video's Cloudflare Stream upload in the BACKGROUND. The uid is known
+  // immediately (attach on save even mid-upload); bytes stream with progress and
+  // are never re-encoded on the phone. Failures never block the order.
+  const addVideoFile = (file) => {
+    const key = (videoKeyRef.current += 1);
+    const patch = (p) => setVideos((prev) => prev.map((v) => (v.key === key ? { ...v, ...p } : v)));
+    const started = beginStreamUpload(file, (pct) => patch({ progress: pct }));
+    const uidPromise = started.then((r) => r.uid).catch(() => null);
+    setVideos((prev) => [...prev, { key, url: URL.createObjectURL(file), status: 'uploading', progress: 0, uidPromise }]);
+    started.then(({ uid, done }) => {
+      patch({ uid });
+      done
+        .then(() => patch({ status: 'processing', progress: 100 }))
+        .catch((err) => { console.error('Video upload failed', err); patch({ status: 'error' }); });
+    }).catch((e) => { console.error('Video upload init failed', e); patch({ status: 'error' }); });
+  };
+
   const onPickFiles = async (e) => {
     // 4-item cap is shared across images + videos.
     const files = Array.from(e.target.files || []).slice(0, Math.max(0, 4 - images.length - videos.length));
     for (const f of files) {
-      const localUrl = URL.createObjectURL(f);
-      if (f.type?.startsWith('video')) {
-        // Videos go to Cloudflare Stream on save (not Firebase Storage).
-        setVideos((prev) => [...prev, { url: localUrl, _file: f }]);
-      } else {
-        setImages((prev) => [...prev, { url: localUrl, type: 'image', _file: f }]);
-      }
+      if (f.type?.startsWith('video')) addVideoFile(f); // gallery video → Stream as-is
+      else setImages((prev) => [...prev, { url: URL.createObjectURL(f), type: 'image', _file: f }]);
     }
     e.target.value = '';
   };
-  const removeVideo = (i) => setVideos((prev) => prev.filter((_, idx) => idx !== i));
+  const removeVideo = (key) => setVideos((prev) => prev.filter((v) => v.key !== key));
   const removeImage = (i) => setImages((prev) => prev.filter((_, idx) => idx !== i));
 
   // Voice note — reuse the proven chat recorder. Records in-app; the blob is
@@ -123,16 +139,15 @@ export default function CreateOrder() {
         }
       }
 
-      // Videos → Cloudflare Stream (keep existing {uid} entries, upload new files).
+      // Videos → Cloudflare Stream. Uploads run in the background; we only need
+      // the uid to attach (known before the bytes finish). Never wait for bytes.
       const videosOut = [];
       for (const v of videos) {
-        try {
-          if (v.uid) videosOut.push({ uid: v.uid });
-          else if (v._file) { const { uid } = await uploadVideoToStream(v._file); videosOut.push({ uid }); }
-        } catch (e) {
-          console.error('Video upload failed', e);
-          uploadWarnings.push('a video');
-        }
+        if (v.status === 'error') { uploadWarnings.push('a video'); continue; }
+        let uid = v.uid;
+        if (!uid && v.uidPromise) { try { uid = await v.uidPromise; } catch (e) { uid = null; } }
+        if (uid) videosOut.push({ uid });
+        else uploadWarnings.push('a video');
       }
 
       // Voice note → Firebase Storage (upload only on save; keep existing as-is).
@@ -312,15 +327,32 @@ export default function CreateOrder() {
               <button type="button" onClick={() => removeImage(i)} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,.55)', color: '#fff', borderRadius: 8, width: 26, height: 26 }}>✕</button>
             </div>
           ))}
-          {videos.map((v, i) => (
-            <div key={`vid-${i}`} style={{ position: 'relative', height: 110, borderRadius: 14, overflow: 'hidden', background: '#000' }}>
-              {v.url
-                ? <video src={v.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
-                : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 13 }}>🎥 Video</div>}
-              <span style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,.55)', color: '#fff', borderRadius: 6, fontSize: 11, padding: '2px 6px' }}>🎥 Video</span>
-              <button type="button" onClick={() => removeVideo(i)} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,.55)', color: '#fff', borderRadius: 8, width: 26, height: 26 }}>✕</button>
-            </div>
-          ))}
+          {videos.map((v) => {
+            const label = v.status === 'uploading' ? `Uploading ${v.progress || 0}%`
+              : v.status === 'processing' ? 'Processing — ready in a moment'
+                : v.status === 'error' ? 'Upload failed' : '🎥 Video';
+            return (
+              <div key={`vid-${v.key}`} style={{ position: 'relative', height: 110, borderRadius: 14, overflow: 'hidden', background: '#000' }}>
+                {v.url
+                  ? <video src={v.url} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: v.status === 'ready' ? 1 : 0.5 }} muted playsInline />
+                  : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 20 }}>🎥</div>}
+                {/* progress / processing overlay */}
+                {v.status !== 'ready' && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,.35)', color: '#fff', fontSize: 11, textAlign: 'center', padding: 8 }}>
+                    <div>
+                      {v.status === 'uploading' && (
+                        <div style={{ width: 70, height: 5, borderRadius: 3, background: 'rgba(255,255,255,.3)', margin: '0 auto 6px' }}>
+                          <div style={{ width: `${v.progress || 0}%`, height: '100%', borderRadius: 3, background: '#ff6b35' }} />
+                        </div>
+                      )}
+                      {label}
+                    </div>
+                  </div>
+                )}
+                <button type="button" onClick={() => removeVideo(v.key)} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,.55)', color: '#fff', borderRadius: 8, width: 26, height: 26 }}>✕</button>
+              </div>
+            );
+          })}
           {(images.length + videos.length) < 4 && (
             <label className="card" style={{ height: 110, display: 'grid', placeItems: 'center', cursor: 'pointer', border: '1.5px dashed var(--line)', boxShadow: 'none' }}>
               <div style={{ textAlign: 'center', color: 'var(--ink-faint)' }}><IcImage size={26} /><div style={{ fontSize: 12, marginTop: 4 }}>Add media</div></div>
@@ -328,6 +360,17 @@ export default function CreateOrder() {
             </label>
           )}
         </div>
+        {(images.length + videos.length) < 4 && (
+          <button type="button" className="btn btn-ghost btn-block" style={{ marginTop: 10, gap: 8 }} onClick={() => setShowRecorder(true)}>
+            🎥 Record video (720p)
+          </button>
+        )}
+        {showRecorder && (
+          <VideoRecorder
+            onClose={() => setShowRecorder(false)}
+            onDone={(file) => { setShowRecorder(false); addVideoFile(file); }}
+          />
+        )}
 
         <div className="section-title">Voice note</div>
         {voiceNote ? (
