@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -5,10 +6,37 @@ import {
 } from '../utils/format';
 import { setStage } from '../utils/actions';
 import { shareOrder } from '../utils/share';
+import { getStreamPlayback, streamThumbUrl } from '../utils/stream';
 import { UrgencyBadge, EditedBadge } from './Badges';
 import StagePipeline from './StagePipeline';
 import MediaStrip from './MediaStrip';
 import { IcWhatsApp } from './Icons';
+
+// Card preview thumbnail for a Cloudflare Stream video. Fetches the signed
+// token (cached), shows the signed thumbnail with a play overlay, and falls
+// back to a neutral tile while processing or on any error (never a broken image).
+function VideoThumb({ uid, onOpen }) {
+  const [pb, setPb] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getStreamPlayback(uid).then((d) => { if (alive) setPb(d); }).catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [uid]);
+
+  const url = !failed ? streamThumbUrl(pb) : null;
+  const processing = !failed && (!pb || !pb.ready);
+  return (
+    <div onClick={onOpen} style={{ position: 'relative', width: 150, height: 150, minWidth: 150, flexShrink: 0, borderRadius: 14, overflow: 'hidden', background: '#111', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+      {url
+        ? <img src={url} alt="" onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        : <div style={{ color: '#fff', opacity: 0.75, fontSize: 12, textAlign: 'center', padding: 6 }}>{processing ? '🎥 Processing…' : '🎥 Video'}</div>}
+      <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+        <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'rgba(0,0,0,.5)', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 16, paddingLeft: 3 }}>▶</div>
+      </div>
+    </div>
+  );
+}
 
 export default function OrderCard({ order, channelCode, createdByName, inFeed }) {
   const { profile, isVendor, isAdmin, isTeam } = useAuth();
@@ -43,6 +71,12 @@ export default function OrderCard({ order, channelCode, createdByName, inFeed })
       {order.images?.length > 0 && (
         <div style={{ marginTop: 10 }}>
           <MediaStrip media={order.images} />
+        </div>
+      )}
+
+      {order.videos?.length > 0 && (
+        <div className="media-strip" style={{ marginTop: 10 }}>
+          {order.videos.map((v) => <VideoThumb key={v.uid} uid={v.uid} onOpen={go} />)}
         </div>
       )}
 
