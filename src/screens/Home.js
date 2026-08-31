@@ -16,7 +16,7 @@ export default function Home() {
 }
 
 function DashboardHome() {
-  const { profile } = useAuth();
+  const { profile, build } = useAuth();
   const nav = useNavigate();
   const { data: rawOrders } = useOrders(profile);
   const { data: users } = useUsers();
@@ -54,6 +54,7 @@ function DashboardHome() {
 
   return (
     <div className="app-shell">
+      <div className="faint" style={{ textAlign: 'center', fontSize: 10, padding: '4px 0 0', opacity: 0.6 }}>build {build}</div>
       <div className="topbar">
         <div className="logo-mark" style={{ width: 38, height: 38, borderRadius: 12, animation: 'none' }}><IcDiamond size={20} color="#fff" /></div>
         <h1>AJKO</h1>
@@ -117,7 +118,7 @@ function StatCard({ label, num, color, active, onClick, sub }) {
 }
 
 function VendorHome() {
-  const { profile } = useAuth();
+  const { profile, build } = useAuth();
   const nav = useNavigate();
   const { data: rawOrders } = useOrders(profile);
   const { data: channels } = useChannels(profile);
@@ -129,6 +130,7 @@ function VendorHome() {
 
   return (
     <div className="app-shell">
+      <div className="faint" style={{ textAlign: 'center', fontSize: 10, padding: '4px 0 0', opacity: 0.6 }}>build {build}</div>
       <div className="topbar">
         <div className="avatar" style={{ width: 38, height: 38, fontSize: 13 }}>{profile.code?.split('-').pop() || initials(profile.name)}</div>
         <div style={{ flex: 1 }}>
