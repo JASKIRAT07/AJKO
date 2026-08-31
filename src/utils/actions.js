@@ -3,7 +3,8 @@ import {
   collection, addDoc, doc, getDoc, updateDoc, deleteDoc, serverTimestamp,
   arrayUnion, arrayRemove, getDocs, query, where, writeBatch, runTransaction,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
 import { STAGE_ORDER, formatAppOrderNo, formatDate } from './format';
 import { normalizePhone } from './auth';
 
@@ -277,6 +278,22 @@ export async function setTeamChannelMembership(user, channelId, add) {
 
 // Admin: delete an order and its messages.
 export async function deleteOrder(orderId) {
+  // Best-effort: clean up THIS order's Cloudflare Stream videos so they aren't
+  // orphaned/billed. Read the uids BEFORE deleting, fire the server-side delete
+  // WITHOUT awaiting it, and never let it block or fail the order deletion.
+  try {
+    const snap = await getDoc(doc(db, 'orders', orderId));
+    const uids = snap.exists() && Array.isArray(snap.data().videos)
+      ? snap.data().videos.map((v) => v && v.uid).filter(Boolean)
+      : [];
+    if (uids.length) {
+      httpsCallable(functions, 'deleteStreamVideos')({ uids })
+        .catch((e) => console.error('Stream cleanup failed (order still deleted)', e));
+    }
+  } catch (e) {
+    console.error('Stream cleanup skipped (order still deleted)', e);
+  }
+
   const msgs = await getDocs(query(collection(db, 'messages'), where('orderId', '==', orderId)));
   const batch = writeBatch(db);
   msgs.docs.forEach((d) => batch.delete(d.ref));

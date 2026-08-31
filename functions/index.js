@@ -494,6 +494,28 @@ exports.getStreamToken = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) => {
   return { token: tok.result.token, host, ready };
 });
 
+// Delete specific Cloudflare Stream videos (called when an order is genuinely
+// deleted, so its clips aren't left orphaned/billed). Best-effort per uid — a
+// failure is logged, never thrown, so the order deletion is never affected.
+exports.deleteStreamVideos = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const uids = Array.isArray(req.data?.uids) ? req.data.uids.filter(Boolean) : [];
+  let deleted = 0;
+  await Promise.all(uids.map(async (uid) => {
+    try {
+      const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream/${uid}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${CF_STREAM_TOKEN.value()}` },
+      });
+      if (res.ok) deleted += 1;
+      else logger.warn('Stream delete failed', uid, res.status);
+    } catch (e) {
+      logger.warn('Stream delete error', uid, e);
+    }
+  }));
+  return { deleted, requested: uids.length };
+});
+
 // ---- 5. Private pre-login lookups -------------------------------------------
 exports.lookupLogin = onCall(async (req) => {
   const id = String(req.data?.loginId || '').trim();
