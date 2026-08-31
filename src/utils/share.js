@@ -1,5 +1,9 @@
 import { whatsappMessage, whatsappUrl } from './format';
 
+// Audio formats the Web Share API / WhatsApp accept. webm/ogg are NOT included
+// (iOS Safari + WhatsApp reject them → "this item cannot be shared").
+const SHARE_SAFE_AUDIO = /^audio\/(mp4|m4a|x-m4a|aac|mpeg|mp3)/i;
+
 async function urlToFile(url, name) {
   const res = await fetch(url);
   const blob = await res.blob();
@@ -21,10 +25,18 @@ export async function prepareShareFiles(order) {
 
   // Voice note (if any) attached AFTER the images. Best-effort — a failure here
   // must never drop the images or break the share.
+  // Only attach SHARE-SAFE audio (mp4/m4a/aac/mp3). webm/ogg are rejected by
+  // iOS Safari / WhatsApp and cause "this item cannot be shared", so we exclude
+  // them and let images + text share cleanly instead (graceful).
   let voice = null;
   if (order.voiceNote && order.voiceNote.url) {
-    voice = await urlToFile(order.voiceNote.url, `${order.appOrderNo || 'order'}-voice`).catch(() => null);
-    if (voice && !voice.type.startsWith('audio')) voice = null;
+    const f = await urlToFile(order.voiceNote.url, `${order.appOrderNo || 'order'}-voice`).catch(() => null);
+    if (f && SHARE_SAFE_AUDIO.test(f.type)) {
+      // Prefer an .m4a filename for mp4 audio so WhatsApp recognises it.
+      voice = f.type.includes('mp4')
+        ? new File([f], f.name.replace(/\.\w+$/, '.m4a'), { type: f.type })
+        : f;
+    }
   }
   return voice ? [...images, voice] : images;
 }
