@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders, useUsers, useChannels, decorateOrders } from '../hooks/useCollections';
@@ -34,6 +34,22 @@ function DashboardHome() {
     else sessionStorage.removeItem('ajko_dash_stage');
   }, [stageFilter]);
   useEffect(() => { sessionStorage.setItem('ajko_dash_channel', channelFilter); }, [channelFilter]);
+
+  // Keep the selected channel visible in the horizontal bar on return (the bar's
+  // own scrollLeft resets to 0 on remount). Scrolls ONLY the bar horizontally —
+  // never the page — so the vertical order-list restoration is untouched.
+  const channelBarRef = useRef(null);
+  const activeChipRef = useRef(null);
+  useEffect(() => {
+    if (channelFilter === 'all') return;
+    const bar = channelBarRef.current;
+    const chip = activeChipRef.current;
+    if (!bar || !chip) return;
+    const barRect = bar.getBoundingClientRect();
+    const chipRect = chip.getBoundingClientRect();
+    const delta = (chipRect.left - barRect.left) - (bar.clientWidth / 2) + (chipRect.width / 2);
+    bar.scrollLeft = Math.max(0, bar.scrollLeft + delta);
+  }, [channelFilter, channels.length]);
 
   const newEdited = orders.filter((o) => o.stage === 'newedited').length;
   const counts = {
@@ -85,10 +101,10 @@ function DashboardHome() {
           </div>
         )}
 
-        <div className="pill-row" style={{ marginTop: 16 }}>
+        <div className="pill-row" style={{ marginTop: 16 }} ref={channelBarRef}>
           <button className={`chip ${channelFilter === 'all' ? 'chip-active' : ''}`} onClick={() => setChannelFilter('all')}>All channels</button>
           {channels.map((c) => (
-            <button key={c.id} className={`chip ${channelFilter === c.id ? 'chip-active' : ''}`} onClick={() => setChannelFilter(c.id)}>{c.code}</button>
+            <button key={c.id} ref={channelFilter === c.id ? activeChipRef : null} className={`chip ${channelFilter === c.id ? 'chip-active' : ''}`} onClick={() => setChannelFilter(c.id)}>{c.code}</button>
           ))}
         </div>
 
