@@ -20,8 +20,10 @@
 
   --radius: 20px;
   --radius-sm: 14px;
-  --shadow: 0 8px 24px rgba(28, 25, 23, 0.06);
-  --shadow-lg: 0 14px 40px rgba(28, 25, 23, 0.1);
+  /* Softer, layered shadows — a tight contact layer + a wide ambient layer for
+     gentle, natural depth (same overall lightness as before, just refined). */
+  --shadow: 0 1px 2px rgba(28, 25, 23, 0.04), 0 6px 20px rgba(28, 25, 23, 0.06);
+  --shadow-lg: 0 2px 6px rgba(28, 25, 23, 0.05), 0 16px 42px rgba(28, 25, 23, 0.10);
   --maxw: 540px;
 }
 
@@ -351,4 +353,52 @@ a { color: inherit; text-decoration: none; }
 @media (min-width: 768px) {
   /* desktop has a sidebar instead of bottom nav, so sit at the bottom */
   .input-bar.above-nav { bottom: 0; }
+}
+
+/* ============================================================
+   AESTHETIC POLISH — visual only. No layout/markup/logic changes.
+   All motion is short (~150–250ms), pure CSS, transform/opacity only
+   (no layout reflow), and disabled under prefers-reduced-motion.
+   ============================================================ */
+
+/* 1. Tap / press feedback — springy scale-down on press (transform = no reflow) */
+.btn, .chip, .icon-btn, .round-btn, .stat-card, .fab, .toggle button {
+  transition: transform .16s cubic-bezier(.34, 1.4, .64, 1), box-shadow .18s ease, filter .16s ease;
+}
+.btn:active, .chip:active, .icon-btn:active, .round-btn:active,
+.stat-card:active, .toggle button:active { transform: scale(.965); }
+/* override the older translateY press so primaries/fab spring the same way */
+.btn-primary:active, .btn-wa:active, .fab:active { transform: scale(.955); }
+/* very gentle card press (subtle so pressing an inner button doesn't feel odd) */
+.card { transition: transform .18s ease; }
+.card:active { transform: scale(.996); }
+
+/* 3. Smooth view transition — quick fade + tiny rise as a screen mounts */
+.screen { animation: screenIn .22s ease both; }
+@keyframes screenIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* 4. Skeleton shimmer utility (used for loading placeholders) */
+.skeleton { position: relative; overflow: hidden; background: #efe9e3; border-radius: var(--radius-sm); }
+.skeleton::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent);
+  animation: shimmer 1.3s infinite;
+}
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+
+/* 6. Typography rhythm — crisper heading line-height/tracking (no size/text change) */
+h1, h2, h3 { line-height: 1.18; letter-spacing: -0.01em; }
+body { text-rendering: optimizeLegibility; }
+
+/* 8. Micro-interaction helper — a satisfying pop for save-success ticks */
+.check-pop { display: inline-block; animation: checkPop .28s cubic-bezier(.34, 1.56, .64, 1) both; }
+@keyframes checkPop { 0% { transform: scale(0); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
+
+/* Respect reduced motion — turn all of the above off */
+@media (prefers-reduced-motion: reduce) {
+  .screen, .btn, .chip, .icon-btn, .round-btn, .stat-card, .fab, .toggle button, .card {
+    animation: none !important; transition: none !important;
+  }
+  .btn:active, .card:active, .chip:active, .stat-card:active, .icon-btn:active, .round-btn:active { transform: none !important; }
+  .skeleton::after, .check-pop { animation: none !important; }
 }
