@@ -376,10 +376,13 @@ a { color: inherit; text-decoration: none; }
 .card { transition: transform .18s ease; }
 .card:active { transform: scale(.996); }
 
-/* 3. Smooth view transition — opacity-only fade as a screen mounts (no rise, so
-   it never competes with scroll restoration on back-navigation → no jump/jank). */
-.screen { animation: screenIn .2s ease both; }
-@keyframes screenIn { from { opacity: 0; } to { opacity: 1; } }
+/* 3. Directional slide + fade view transition. Horizontal (translateX) only, so
+   it never competes with VERTICAL scroll restoration on back-nav. Forward slides
+   in from the right; back slides in from the left → feels like going back. */
+.screen { animation: screenFwd .22s cubic-bezier(.2, .7, .3, 1) both; }
+[data-nav="back"] .screen { animation: screenBack .22s cubic-bezier(.2, .7, .3, 1) both; }
+@keyframes screenFwd { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes screenBack { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
 
 /* 4. Skeleton shimmer utility (used for loading placeholders) */
 .skeleton { position: relative; overflow: hidden; background: #efe9e3; border-radius: var(--radius-sm); }
@@ -417,4 +420,14 @@ body { text-rendering: optimizeLegibility; }
 
 @media (prefers-reduced-motion: reduce) {
   .topbar, .input, .textarea, .select { animation: none !important; transition: none !important; }
+}
+
+/* Bigger, more tappable dashboard channel selector (SCOPED to .channel-bar only
+   — global .chip elsewhere is unchanged). Horizontal scroll + orange highlight +
+   selection behaviour all stay the same; only the size grows (~1.8×). */
+.channel-bar { gap: 10px; padding: 6px 0 2px; }
+.channel-bar .chip { font-size: 17px; padding: 12px 22px; border-radius: 999px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen { animation: none !important; }
 }

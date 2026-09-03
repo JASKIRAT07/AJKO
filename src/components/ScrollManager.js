@@ -15,6 +15,12 @@ export default function ScrollManager() {
   const keyRef = useRef(key);
   keyRef.current = key;
 
+  // Tag the document with the nav direction (pre-paint) so the screen transition
+  // can slide the right way: forward = in from the right, back = in from the left.
+  useLayoutEffect(() => {
+    document.documentElement.dataset.nav = navType === 'POP' ? 'back' : 'fwd';
+  }, [key, navType]);
+
   // Take manual control of scroll restoration. The browser's default 'auto'
   // mode restores unreliably in an SPA where routes swap their content.
   useEffect(() => {

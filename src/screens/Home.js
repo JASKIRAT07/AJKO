@@ -106,7 +106,7 @@ function DashboardHome() {
           </div>
         )}
 
-        <div className="pill-row" style={{ marginTop: 16 }} ref={channelBarRef}>
+        <div className="pill-row channel-bar" style={{ marginTop: 16 }} ref={channelBarRef}>
           <button className={`chip ${channelFilter === 'all' ? 'chip-active' : ''}`} onClick={() => setChannelFilter('all')}>All channels</button>
           {channels.map((c) => (
             <button key={c.id} ref={channelFilter === c.id ? activeChipRef : null} className={`chip ${channelFilter === c.id ? 'chip-active' : ''}`} onClick={() => setChannelFilter(c.id)}>{c.code}</button>
