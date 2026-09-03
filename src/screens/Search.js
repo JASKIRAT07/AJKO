@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders, useChannels, decorateOrders } from '../hooks/useCollections';
@@ -34,6 +34,10 @@ export default function Search() {
 
   const anyFilter = q || stage || purity || sample || channel;
 
+  // Render a page at a time; search still matches across ALL loaded orders.
+  const [shown, setShown] = useState(20);
+  useEffect(() => { setShown(20); }, [q, stage, purity, sample, channel]);
+
   return (
     <div className="app-shell">
       <div className="topbar">
@@ -55,7 +59,12 @@ export default function Search() {
         </div>
 
         <div className="section-title">{anyFilter ? `${results.length} result${results.length === 1 ? '' : 's'}` : 'All orders'}</div>
-        {results.map((o) => <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} />)}
+        {results.slice(0, shown).map((o) => <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} />)}
+        {results.length > shown && (
+          <button className="btn btn-ghost btn-block" style={{ marginTop: 4 }} onClick={() => setShown((n) => n + 20)}>
+            Load more ({results.length - shown} more)
+          </button>
+        )}
         {results.length === 0 && <div className="empty"><div className="big">🔍</div>No matches</div>}
       </div>
     </div>

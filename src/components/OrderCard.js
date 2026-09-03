@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -55,7 +55,7 @@ function VideoThumb({ uid, onOpen }) {
   );
 }
 
-export default function OrderCard({ order, channelCode, createdByName, inFeed }) {
+function OrderCard({ order, channelCode, createdByName, inFeed }) {
   const { profile, isVendor, isAdmin, isTeam } = useAuth();
   const nav = useNavigate();
   const urg = order.urgency;
@@ -143,3 +143,5 @@ export default function OrderCard({ order, channelCode, createdByName, inFeed })
     </div>
   );
 }
+
+export default memo(OrderCard);

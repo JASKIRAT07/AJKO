@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders, useChannels, decorateOrders } from '../hooks/useCollections';
@@ -33,6 +33,10 @@ export default function Orders() {
     return matchesStageFilter(o.stage, filter);
   });
 
+  // Render a page at a time (all orders still loaded/filtered above).
+  const [shown, setShown] = useState(20);
+  useEffect(() => { setShown(20); }, [filter]);
+
   return (
     <div className="app-shell">
       <div className="topbar">
@@ -47,7 +51,16 @@ export default function Orders() {
         </div>
         {list.length === 0 ? (
           <div className="empty"><div className="big">📦</div>No orders here</div>
-        ) : list.map((o) => <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} />)}
+        ) : (
+          <>
+            {list.slice(0, shown).map((o) => <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} />)}
+            {list.length > shown && (
+              <button className="btn btn-ghost btn-block" style={{ marginTop: 4 }} onClick={() => setShown((n) => n + 20)}>
+                Load more ({list.length - shown} more)
+              </button>
+            )}
+          </>
+        )}
       </div>
       {!isVendor && <button className="fab" onClick={() => nav('/create')}><IcPlus size={26} /></button>}
       <BottomNav />

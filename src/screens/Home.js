@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useOrders, useUsers, useChannels, decorateOrders } from '../hooks/useCollections';
+import { useOrders, useUsersOnce, useChannels, decorateOrders } from '../hooks/useCollections';
 import { initials, isDone, matchesStageFilter } from '../utils/format';
 import { RoleBadge } from '../components/Badges';
 import OrderCard from '../components/OrderCard';
@@ -19,7 +19,7 @@ function DashboardHome() {
   const { profile, build } = useAuth();
   const nav = useNavigate();
   const { data: rawOrders } = useOrders(profile);
-  const { data: users } = useUsers();
+  const { data: users } = useUsersOnce();
   const { data: channels } = useChannels(profile);
   const orders = useMemo(() => decorateOrders(rawOrders), [rawOrders]);
   const channelCode = (id) => channels.find((c) => c.id === id)?.code || '';
@@ -34,6 +34,11 @@ function DashboardHome() {
     else sessionStorage.removeItem('ajko_dash_stage');
   }, [stageFilter]);
   useEffect(() => { sessionStorage.setItem('ajko_dash_channel', channelFilter); }, [channelFilter]);
+
+  // Render only a page of cards at a time (counts/data below still use ALL
+  // orders — only the rendered list is capped). Resets when the filter changes.
+  const [shown, setShown] = useState(20);
+  useEffect(() => { setShown(20); }, [stageFilter, channelFilter]);
 
   // Keep the selected channel visible in the horizontal bar on return (the bar's
   // own scrollLeft resets to 0 on remount). Scrolls ONLY the bar horizontally —
@@ -112,9 +117,16 @@ function DashboardHome() {
         {filtered.length === 0 ? (
           <div className="empty"><div className="big">📦</div>No orders yet</div>
         ) : (
-          filtered.map((o) => (
-            <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} createdByName={profile.role === 'team' ? creatorName(o.createdBy) : null} />
-          ))
+          <>
+            {filtered.slice(0, shown).map((o) => (
+              <OrderCard key={o.id} order={o} channelCode={channelCode(o.channelId)} createdByName={profile.role === 'team' ? creatorName(o.createdBy) : null} />
+            ))}
+            {filtered.length > shown && (
+              <button className="btn btn-ghost btn-block" style={{ marginTop: 4 }} onClick={() => setShown((n) => n + 20)}>
+                Load more ({filtered.length - shown} more)
+              </button>
+            )}
+          </>
         )}
       </div>
 

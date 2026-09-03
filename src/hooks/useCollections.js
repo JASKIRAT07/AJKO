@@ -1,7 +1,7 @@
 // Real-time Firestore collection hooks for AJKO
 import { useEffect, useState } from 'react';
 import {
-  collection, onSnapshot, query, where, orderBy,
+  collection, onSnapshot, query, where, orderBy, getDocs,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getUrgency } from '../utils/format';
@@ -65,6 +65,21 @@ export function useUsers() {
     [],
     (a, b) => ms(b.createdAt) - ms(a.createdAt)
   );
+}
+
+// One-time (non-live) users fetch — for places that only need names (e.g. the
+// dashboard's "Created by"), so we don't keep a live listener on the whole
+// users collection. Names change rarely; this loads once per mount.
+export function useUsersOnce() {
+  const [data, setData] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    getDocs(collection(db, 'users'))
+      .then((snap) => { if (alive) setData(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  return { data };
 }
 
 // Channels, role-scoped. Admin sees all; everyone else sees channels they belong to.
