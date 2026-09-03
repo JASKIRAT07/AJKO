@@ -9,7 +9,7 @@ import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
 
-export const AUTH_BUILD = 'iosicon-v37';
+export const AUTH_BUILD = 'scroll2-v38';
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);

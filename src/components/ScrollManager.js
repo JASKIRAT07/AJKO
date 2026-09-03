@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useLocation, useNavigationType } from 'react-router-dom';
 
 // Remembers the window scroll position per history entry so Back / Forward
@@ -32,7 +32,10 @@ export default function ScrollManager() {
   }, [key]);
 
   // On navigation: restore on Back/Forward (POP); go to top on new pushes.
-  useEffect(() => {
+  // useLayoutEffect so the first restore happens AFTER the DOM commit but BEFORE
+  // paint — the returning list is already scrolled on its first visible frame,
+  // so it never flashes at the top then jumps.
+  useLayoutEffect(() => {
     // Chat manages its own scroll (jumps to the newest message) — don't fight it.
     if (location.pathname.startsWith('/conversations')) return undefined;
 
@@ -43,6 +46,8 @@ export default function ScrollManager() {
 
     const target = positions.get(key) || 0;
     if (target <= 0) return undefined; // nothing to restore
+
+    window.scrollTo(0, target); // immediate, pre-paint restore
 
     // The list we're returning to re-loads asynchronously and its order cards /
     // images grow the page as they render, which shifts everything. So re-assert
