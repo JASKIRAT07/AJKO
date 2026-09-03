@@ -16,12 +16,13 @@ import Members from './screens/Members';
 import Sidebar from './components/Sidebar';
 import Splash from './components/Splash';
 import ScrollManager from './components/ScrollManager';
+import Loader from './components/Loader';
 import Watch from './screens/Watch';
 
 function Shell() {
   const { fbUser, profile, loading, authError, build } = useAuth();
 
-  if (loading) return <div className="full-center"><div className="spinner" /></div>;
+  if (loading) return <Loader text="Loading…" />;
   if (!fbUser) return <Login />;
 
   if (!profile) {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { getWatchData } from '../utils/stream';
 import { IcDiamond } from '../components/Icons';
+import Loader from '../components/Loader';
 
 const ORANGE = '#ff6b35';
 const BG = '#faf7f4';
@@ -108,7 +109,7 @@ export default function Watch() {
           </>
         )}
 
-        {state === 'loading' && <div style={{ marginTop: 40, textAlign: 'center', color: '#6b625c' }}>Loading…</div>}
+        {state === 'loading' && <Loader text="Loading…" full={false} />}
         {state === 'notfound' && <div style={{ marginTop: 40, textAlign: 'center', color: '#6b625c' }}>This order link isn’t available.</div>}
         {state === 'error' && <div style={{ marginTop: 40, textAlign: 'center', color: '#6b625c' }}>Couldn’t load the media. Please try again.</div>}
       </div>

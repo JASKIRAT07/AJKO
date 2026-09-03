@@ -24,6 +24,10 @@ export default function Splash() {
         <h1 style={{ fontSize: 40, fontWeight: 800, margin: '18px 0 6px', letterSpacing: '-0.02em' }}>AJKO</h1>
         <p className="splash-quote">“{pick.q}”</p>
         <p className="splash-author">— {pick.a}</p>
+        <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <div className="spinner" />
+          <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>Almost done…</div>
+        </div>
       </div>
     </div>
   );

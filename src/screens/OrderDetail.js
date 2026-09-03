@@ -13,6 +13,7 @@ import { shareOrder, prepareShareFiles } from '../utils/share';
 import { StageBadge, UrgencyBadge, EditedBadge } from '../components/Badges';
 import StagePipeline from '../components/StagePipeline';
 import MediaStrip from '../components/MediaStrip';
+import Loader from '../components/Loader';
 import { IcBack, IcWhatsApp, IcChevron } from '../components/Icons';
 
 export default function OrderDetail() {
@@ -39,21 +40,7 @@ export default function OrderDetail() {
   }, [mediaKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const urgency = useMemo(() => order && getUrgency(order.dueDate, order.stage), [order]);
-  if (!order) {
-    // Shimmer skeleton while the order loads (visual placeholder only).
-    return (
-      <div className="app-shell">
-        <div className="topbar"><button className="icon-btn" onClick={() => nav(-1)}><IcBack size={18} /></button></div>
-        <div className="screen">
-          <div className="skeleton" style={{ height: 200, borderRadius: 18, marginBottom: 16 }} />
-          <div className="skeleton" style={{ height: 26, width: '55%', marginBottom: 10 }} />
-          <div className="skeleton" style={{ height: 15, width: '75%', marginBottom: 22 }} />
-          <div className="skeleton" style={{ height: 96, marginBottom: 12 }} />
-          <div className="skeleton" style={{ height: 120 }} />
-        </div>
-      </div>
-    );
-  }
+  if (!order) return <Loader text="Loading order…" />;
 
   const channel = channels.find((c) => c.id === order.channelId);
   const vendorMembers = users.filter((u) => u.role === 'vendor' && u.channelId === order.channelId);

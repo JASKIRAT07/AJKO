@@ -64,7 +64,7 @@ a { color: inherit; text-decoration: none; }
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
-.topbar h1 { font-size: 20px; font-weight: 800; margin: 0; flex: 1; }
+.topbar h1 { font-size: 22px; font-weight: 800; margin: 0; flex: 1; }
 .icon-btn {
   width: 40px; height: 40px; border-radius: 12px;
   display: grid; place-items: center;
@@ -250,7 +250,7 @@ a { color: inherit; text-decoration: none; }
 /* misc */
 .muted { color: var(--ink-soft); }
 .faint { color: var(--ink-faint); }
-.section-title { font-size: 15px; font-weight: 800; margin: 18px 0 10px; }
+.section-title { font-size: 16px; font-weight: 800; margin: 18px 0 10px; }
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .center-col { display: flex; flex-direction: column; align-items: center; }
@@ -281,7 +281,7 @@ a { color: inherit; text-decoration: none; }
 /* ============ batch update: glows, order no, lightbox, splash, desktop ============ */
 
 /* #11 prominent order number */
-.order-no { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.order-no { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
 
 /* #14 four stat cards (2x2 on mobile) */
 .stat-row.four { grid-template-columns: repeat(2, 1fr); }
@@ -401,4 +401,16 @@ body { text-rendering: optimizeLegibility; }
   }
   .btn:active, .card:active, .chip:active, .stat-card:active, .icon-btn:active, .round-btn:active { transform: none !important; }
   .skeleton::after, .check-pop { animation: none !important; }
+}
+
+/* 2. Seamless tab switching — fade the header + content in together on mount so
+   changing tabs reads as a clean cross-fade, never a jarring snap/flash. */
+.topbar { animation: viewFade .2s ease both; }
+@keyframes viewFade { from { opacity: 0; } to { opacity: 1; } }
+
+/* 3. Smoother inputs — ease focus/border changes */
+.input, .textarea, .select { transition: border-color .15s ease, box-shadow .15s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar, .input, .textarea, .select { animation: none !important; transition: none !important; }
 }

@@ -9,7 +9,7 @@ import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
 
-export const AUTH_BUILD = 'polish-v35';
+export const AUTH_BUILD = 'polish2-v36';
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
