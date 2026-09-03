@@ -9,7 +9,7 @@ import { enablePush } from '../serviceWorkerRegistration';
 
 const AuthContext = createContext(null);
 
-export const AUTH_BUILD = 'sharefix-v32';
+export const AUTH_BUILD = 'mediapage-v33';
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);

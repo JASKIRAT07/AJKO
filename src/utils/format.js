@@ -186,15 +186,20 @@ export function whatsappMessage(order, { withLinks = false } = {}) {
   if (order.extraDetails) lines.push(`🗒️ Extra details: ${order.extraDetails}`);
   lines.push(`🧪 Sample taken: ${order.sampleTaken ? 'Yes' : 'No'}`);
   if (images.length) lines.push(`📎 ${images.length} image${images.length === 1 ? '' : 's'} attached`);
-  if (order.voiceNote) lines.push('🎤 Voice note attached');
   if (withLinks && images.length) {
     lines.push('', '🖼️ Media:');
     images.forEach((m) => lines.push(typeof m === 'string' ? m : m.url));
   }
-  // One watch-page link per order when it has video(s). Best-effort: needs the
-  // order's doc id (present on saved orders / the share button).
-  if (order.videos && order.videos.length && order.id) {
-    lines.push('', '🎥 *वीडियो देखो, नीचे दिए गए लिंक पर* 👇', `https://ajko.pages.dev/watch/${order.id}`);
+  // ONE combined media-page link per order when it has video and/or voice.
+  // Text depends on what's present. Needs the order's doc id (saved orders).
+  const hasVideo = !!(order.videos && order.videos.length);
+  const hasVoice = !!order.voiceNote;
+  if (order.id && (hasVideo || hasVoice)) {
+    let mediaLine;
+    if (hasVideo && hasVoice) mediaLine = '🎥 *वीडियो देखो* और 🎤 *वॉइस नोट सुनो*, नीचे दिए गए लिंक पर 👇';
+    else if (hasVideo) mediaLine = '🎥 *वीडियो देखो, नीचे दिए गए लिंक पर* 👇';
+    else mediaLine = '🎤 *वॉइस नोट सुनो, नीचे दिए गए लिंक पर* 👇';
+    lines.push('', mediaLine, `https://ajko.pages.dev/watch/${order.id}`);
   }
   lines.push('', '— AJKO');
   return lines.join('\n');

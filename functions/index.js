@@ -461,7 +461,8 @@ exports.getWatchData = onCall({ secrets: [CF_STREAM_TOKEN] }, async (req) => {
     try { return await fetchStreamDetails(v.uid); }
     catch (e) { logger.warn('watch details failed', v.uid, e); return { uid: v.uid, host: 'iframe.videodelivery.net', ready: false, duration: 0 }; }
   }));
-  return { found: true, appOrderNo: o.appOrderNo || '', itemName: o.itemName || '', videos };
+  const voiceNote = o.voiceNote && o.voiceNote.url ? { url: o.voiceNote.url, name: o.voiceNote.name || 'Voice note' } : null;
+  return { found: true, appOrderNo: o.appOrderNo || '', itemName: o.itemName || '', videos, voiceNote };
 });
 
 // Mint a short-lived signed playback token for one video, plus the account's
