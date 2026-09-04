@@ -424,8 +424,8 @@ body { text-rendering: optimizeLegibility; }
 /* Bigger, more tappable dashboard channel selector (SCOPED to .channel-bar only
    — global .chip elsewhere is unchanged). Horizontal scroll + orange highlight +
    selection behaviour all stay the same; only the size grows (~1.8×). */
-.channel-bar { gap: 12px; padding: 6px 0 2px; }
-.channel-bar .chip { font-size: 21px; padding: 15px 28px; border-radius: 999px; }
+.channel-bar { gap: 8px; padding: 6px 0 2px; }
+.channel-bar .chip { font-size: 15px; padding: 11px 20px; border-radius: 999px; }
 
 @media (prefers-reduced-motion: reduce) {
   .screen { animation: none !important; }
