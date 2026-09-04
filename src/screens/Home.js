@@ -48,6 +48,10 @@ function DashboardHome() {
     const q = chanQuery.trim().toLowerCase();
     return !q || `${c.code} ${c.name || ''}`.toLowerCase().includes(q);
   });
+  // Fresh channel SELECTION starts the list at the top. (Back-navigation scroll
+  // restore is separate — it runs on POP via ScrollManager, not here — so it's
+  // unaffected.)
+  const selectChannel = (id) => { setChannelFilter(id); window.scrollTo({ top: 0 }); };
 
   // Keep the selected channel visible in the horizontal bar on return (the bar's
   // own scrollLeft resets to 0 on remount). Scrolls ONLY the bar horizontally —
@@ -118,9 +122,9 @@ function DashboardHome() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16 }}>
           <button className="icon-btn" style={{ flexShrink: 0 }} aria-label="Search channels" onClick={() => { setChanQuery(''); setChanSearch(true); }}><IcSearch size={18} /></button>
           <div className="pill-row channel-bar" style={{ flex: 1 }} ref={channelBarRef}>
-            <button className={`chip ${channelFilter === 'all' ? 'chip-active' : ''}`} onClick={() => setChannelFilter('all')}>All channels</button>
+            <button className={`chip ${channelFilter === 'all' ? 'chip-active' : ''}`} onClick={() => selectChannel('all')}>All channels</button>
             {channels.map((c) => (
-              <button key={c.id} ref={channelFilter === c.id ? activeChipRef : null} className={`chip ${channelFilter === c.id ? 'chip-active' : ''}`} onClick={() => setChannelFilter(c.id)}>{c.code}</button>
+              <button key={c.id} ref={channelFilter === c.id ? activeChipRef : null} className={`chip ${channelFilter === c.id ? 'chip-active' : ''}`} onClick={() => selectChannel(c.id)}>{c.code}</button>
             ))}
           </div>
         </div>
@@ -146,11 +150,11 @@ function DashboardHome() {
         <div className="modal-back" onClick={() => setChanSearch(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0 }}>Find a channel</h3>
-            <input className="input" autoComplete="off" autoFocus value={chanQuery} onChange={(e) => setChanQuery(e.target.value)} placeholder="Type a channel code or name…" />
+            <input className="input" autoComplete="off" value={chanQuery} onChange={(e) => setChanQuery(e.target.value)} placeholder="Type a channel code or name…" />
             <div style={{ marginTop: 12, maxHeight: '50vh', overflowY: 'auto' }}>
-              <button className="btn btn-ghost btn-block" style={{ justifyContent: 'flex-start', marginBottom: 6 }} onClick={() => { setChannelFilter('all'); setChanSearch(false); }}>All channels</button>
+              <button className="btn btn-ghost btn-block" style={{ justifyContent: 'flex-start', marginBottom: 6 }} onClick={() => { selectChannel('all'); setChanSearch(false); }}>All channels</button>
               {chanMatches.map((c) => (
-                <button key={c.id} className="btn btn-ghost btn-block" style={{ justifyContent: 'flex-start', marginBottom: 6, color: channelFilter === c.id ? 'var(--primary)' : undefined }} onClick={() => { setChannelFilter(c.id); setChanSearch(false); }}>
+                <button key={c.id} className="btn btn-ghost btn-block" style={{ justifyContent: 'flex-start', marginBottom: 6, color: channelFilter === c.id ? 'var(--primary)' : undefined }} onClick={() => { selectChannel(c.id); setChanSearch(false); }}>
                   {c.code}{c.name && c.name !== c.code ? ` · ${c.name}` : ''}
                 </button>
               ))}
