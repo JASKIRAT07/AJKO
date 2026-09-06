@@ -185,6 +185,12 @@ export async function getNextOrderNoPreview() {
 }
 
 // Admin creates a vendor channel (e.g. code "THG"). Code must be unique.
+// Per-vendor AI-call settings (admin only, rules-enforced). Stored on the user
+// doc so they persist even before the calling engine exists.
+export async function updateVendorAiSettings(vendorId, patch) {
+  await updateDoc(doc(db, 'users', vendorId), patch);
+}
+
 export async function createChannel({ code, name }) {
   const clean = String(code || '').trim().toUpperCase().replace(/\s+/g, '');
   if (!clean) throw new Error('Channel code is required.');

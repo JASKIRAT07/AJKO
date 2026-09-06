@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useOrders, useUsersOnce, useChannels, decorateOrders } from '../hooks/useCollections';
+import { useOrders, useUsersOnce, useChannels, useCalls, decorateOrders } from '../hooks/useCollections';
 import { initials, isDone, matchesStageFilter } from '../utils/format';
 import { RoleBadge } from '../components/Badges';
 import OrderCard from '../components/OrderCard';
@@ -16,11 +16,15 @@ export default function Home() {
 }
 
 function DashboardHome() {
-  const { profile, build } = useAuth();
+  const { profile, build, isAdmin } = useAuth();
   const nav = useNavigate();
   const { data: rawOrders } = useOrders(profile);
   const { data: users } = useUsersOnce();
   const { data: channels } = useChannels(profile);
+  // Upset-call flag (admin only; hidden until an upset call exists).
+  const { data: calls } = useCalls(isAdmin);
+  const upsetCall = isAdmin ? calls.find((c) => c.upset) : null;
+  const upsetName = upsetCall ? (users.find((u) => u.id === upsetCall.vendorId)?.code || users.find((u) => u.id === upsetCall.vendorId)?.name || 'A vendor') : '';
   const orders = useMemo(() => decorateOrders(rawOrders), [rawOrders]);
   const channelCode = (id) => channels.find((c) => c.id === id)?.code || '';
   const creatorName = (id) => users.find((u) => u.id === id)?.name || 'Unknown';
@@ -97,6 +101,16 @@ function DashboardHome() {
       </div>
 
       <div className="screen screen-pad-bottom">
+        {upsetCall && (
+          <div className="aic-homeflag" onClick={() => nav(`/ai-calls/${upsetCall.id}`)}>
+            <div className="ic">⚠️</div>
+            <div style={{ flex: 1 }}>
+              <div className="t">{upsetName} got upset on a call</div>
+              <div className="s">AI calls paused. Tap to hear the call &amp; smooth it over.</div>
+            </div>
+            <div className="go">›</div>
+          </div>
+        )}
         <div className="row-between" style={{ marginBottom: 16 }}>
           <GreetingMascot profile={profile} orders={orders} />
           <RoleBadge role={profile.role} />

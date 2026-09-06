@@ -430,3 +430,36 @@ body { text-rendering: optimizeLegibility; }
 @media (prefers-reduced-motion: reduce) {
   .screen { animation: none !important; }
 }
+
+/* ============ AI Calls (admin) — matches the compact preview ============ */
+.aic-filters { display: flex; gap: 8px; margin-bottom: 14px; }
+.aic-filters .select, .aic-filters .input { padding: 10px 12px; font-size: 13px; }
+.aic-row { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; box-shadow: var(--shadow); cursor: pointer; }
+.aic-row .nm { font-size: 14px; font-weight: 800; }
+.aic-row .dt { font-size: 11px; color: var(--ink-faint); margin-top: 2px; }
+.aic-row .rgt { display: flex; align-items: center; gap: 8px; }
+.aic-row .chev { color: #cbbfb6; font-size: 16px; }
+.aic-dotb { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+.aic-dotb.picked, .aic-badge.picked { background: #e7f6ec; color: #2e9e5b; }
+.aic-dotb.nopick { background: #f3eae7; color: var(--ink-faint); }
+.aic-dotb.upset, .aic-badge.upset { background: #fde9e6; color: #e05a4a; }
+.aic-badge { font-size: 11px; font-weight: 700; padding: 5px 11px; border-radius: 99px; }
+.aic-badge.dur { background: #f0ebff; color: #6b5bd0; }
+.aic-rec { display: flex; align-items: center; gap: 11px; background: #fff; border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.aic-trbox { background: #fff; border: 1px solid var(--line); border-radius: 13px; padding: 14px; box-shadow: var(--shadow); }
+.aic-trbox .lbl { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); display: block; margin-bottom: 8px; }
+.aic-trbox p { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); margin: 0 0 8px; }
+.aic-flagbox { margin-top: 14px; background: #fde9e6; border: 1px solid #f5c6bf; border-radius: 12px; padding: 12px 14px; color: #e05a4a; font-size: 13px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
+.aic-kari { background: #fff; border: 1px solid var(--line); border-radius: 15px; padding: 13px 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+.aic-kari .krow { display: flex; justify-content: space-between; align-items: center; }
+.aic-kari .kname { font-size: 15px; font-weight: 800; }
+.aic-rate { font-size: 13px; font-weight: 800; }
+.aic-rate.g { color: #2e9e5b; } .aic-rate.a { color: #e0942a; } .aic-rate.r { color: #e05a4a; }
+.aic-rate.none { color: var(--ink-faint); font-weight: 600; }
+.aic-ctrl { display: flex; justify-content: space-between; align-items: center; margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--line); }
+.aic-ctrl .lab { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+.aic-homeflag { background: linear-gradient(135deg, #fde9e6, #fdf1ef); border: 1.5px solid #f5c6bf; border-radius: 16px; padding: 14px; margin-bottom: 14px; display: flex; gap: 11px; align-items: center; cursor: pointer; }
+.aic-homeflag .ic { font-size: 22px; }
+.aic-homeflag .t { font-size: 14px; font-weight: 800; color: #e05a4a; }
+.aic-homeflag .s { font-size: 12px; color: #8a5049; margin-top: 3px; line-height: 1.4; }
+.aic-homeflag .go { color: #e05a4a; font-size: 18px; }

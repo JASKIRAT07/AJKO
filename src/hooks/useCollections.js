@@ -116,6 +116,16 @@ export function useNotifications(userId) {
   );
 }
 
+// AI call records (admin only). Gated by `enabled` so non-admins never subscribe.
+// Empty until the calling engine (Sarvam) is wired post-KYC.
+export function useCalls(enabled) {
+  return useLiveQuery(
+    () => (enabled ? collection(db, 'calls') : null),
+    [enabled],
+    (a, b) => ms(b.at) - ms(a.at) // newest first
+  );
+}
+
 // Derived helpers
 export function decorateOrders(orders) {
   return orders.map((o) => {

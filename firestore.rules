@@ -95,6 +95,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // AI call records — admin only (read + write). Per-vendor AI-call settings
+    // live on the users doc (already admin-writable), not here.
+    match /calls/{id} {
+      allow read, write: if isAdmin();
+    }
+
     match /counters/{id} {
       allow read, write: if signedIn();
     }
