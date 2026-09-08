@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  stageInfo, countdownLabel, formatDateTime, allowedTransitions,
+  stageInfo, countdownLabel, formatDateTime, allowedTransitions, typeLabel,
 } from '../utils/format';
 import { setStage } from '../utils/actions';
 import { shareOrder } from '../utils/share';
@@ -98,9 +98,10 @@ function OrderCard({ order, channelCode, createdByName, inFeed }) {
       )}
 
       <div className="pill-row" style={{ marginTop: 10 }} onClick={go}>
-        {order.weight && <span className="chip spec-chip">⚖️ {order.weight} gms</span>}
+        {order.weight && <span className="chip spec-chip">⚠️ Max {order.weight} gms</span>}
         {order.purity && <span className="chip spec-chip">✨ {order.purity}</span>}
         {order.look && <span className="chip spec-chip">🎨 {order.look}</span>}
+        {order.type && <span className="chip spec-chip">🏷️ {typeLabel(order.type)}</span>}
         {order.dueDate && <span className="chip spec-chip">📅 {countdownLabel(order.dueDate)}</span>}
         {/* Indicator only — the audio file is NOT loaded here, only in the order. */}
         {order.voiceNote && <span className="chip spec-chip">🎤 voice note</span>}

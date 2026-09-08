@@ -108,7 +108,7 @@ export async function createOrder(data) {
 // size, width, pieces, sample) do NOT.
 const MATERIAL_FIELDS = [
   ['itemName', 'Item name'],
-  ['weight', 'Weight'],
+  ['weight', 'Max weight'],
   ['purity', 'Purity'],
   ['look', 'Look'],
   ['dueDate', 'Due date'],

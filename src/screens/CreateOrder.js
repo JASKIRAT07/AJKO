@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useChannels } from '../hooks/useCollections';
 import {
-  PURITY_OPTIONS, LOOK_OPTIONS, whatsappMessage, countdownLabel,
+  PURITY_OPTIONS, LOOK_OPTIONS, TYPE_OPTIONS, whatsappMessage, countdownLabel,
 } from '../utils/format';
 import {
   createOrder, updateOrder, getNextOrderNoPreview, addUserToChannel,
@@ -17,7 +17,7 @@ import VideoRecorder from '../components/VideoRecorder';
 import { IcBack, IcImage, IcMic } from '../components/Icons';
 
 const blank = {
-  storeOrderNo: '', itemName: '', weight: '', purity: '', look: '',
+  storeOrderNo: '', itemName: '', weight: '', purity: '', look: '', type: '',
   size: '', width: '', pieces: '', designDetails: '', extraDetails: '',
   sampleTaken: false, dueDate: '', channelId: '',
 };
@@ -72,7 +72,10 @@ export default function CreateOrder() {
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const preview = useMemo(() => whatsappMessage({ ...form, appOrderNo, images }), [form, appOrderNo, images]);
-  const valid = form.storeOrderNo && form.itemName && form.weight && form.purity && form.look && form.dueDate && form.channelId;
+  // `type` is mandatory for NEW orders only — editing an older order that
+  // predates this field must not be blocked from saving.
+  const valid = form.storeOrderNo && form.itemName && form.weight && form.purity && form.look
+    && form.dueDate && form.channelId && (editing || form.type);
 
   // Start a video's Cloudflare Stream upload in the BACKGROUND. The uid is known
   // immediately (attach on save even mid-upload); bytes stream with progress and
@@ -186,6 +189,7 @@ export default function CreateOrder() {
         weight: form.weight,
         purity: form.purity,
         look: form.look,
+        type: form.type,
         size: form.size,
         width: form.width,
         pieces: form.pieces,
@@ -285,7 +289,7 @@ export default function CreateOrder() {
           <input className="input" autoComplete="off" value={form.itemName} onChange={(e) => set('itemName', e.target.value)} placeholder="Tikka, Passa, Set…" /></div>
 
         <div className="row-2">
-          <div className="field"><label>Weight (gms) <span className="req">*</span></label>
+          <div className="field"><label>Max weight (gms) ⚠ <span className="req">*</span></label>
             <input className="input" autoComplete="off" type="number" value={form.weight} onChange={(e) => set('weight', e.target.value)} placeholder="0" /></div>
           <div className="field"><label>Pieces (pcs)</label>
             <input className="input" autoComplete="off" type="number" value={form.pieces} onChange={(e) => set('pieces', e.target.value)} placeholder="—" /></div>
@@ -298,6 +302,12 @@ export default function CreateOrder() {
         <DropdownField label="Look / finish" req options={LOOK_OPTIONS} value={form.look} custom={customLook}
           onSelect={(v) => { if (v === '__custom') { setCustomLook(true); set('look', ''); } else { setCustomLook(false); set('look', v); } }}
           onCustom={(v) => set('look', v)} placeholder="Custom finish" />
+
+        <div className="field"><label>Type <span className="req">*</span></label>
+          <select className="select" value={form.type} onChange={(e) => set('type', e.target.value)}>
+            <option value="">Select type…</option>
+            {TYPE_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select></div>
 
         <div className="row-2">
           <div className="field"><label>Size</label><input className="input" autoComplete="off" value={form.size} onChange={(e) => set('size', e.target.value)} placeholder="—" /></div>

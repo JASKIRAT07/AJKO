@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useUsers, useChannels } from '../hooks/useCollections';
 import {
-  getUrgency, formatDate, formatDateTime, stageInfo, allowedTransitions,
+  getUrgency, formatDate, formatDateTime, stageInfo, allowedTransitions, typeLabel,
 } from '../utils/format';
 import { setStage, deleteOrder } from '../utils/actions';
 import { getStreamPlayback } from '../utils/stream';
@@ -57,9 +57,10 @@ export default function OrderDetail() {
   const specs = [
     ['Store ref', `#${order.storeOrderNo}`],
     ['Item name', order.itemName || '—'],
-    ['Weight', order.weight ? `${order.weight} gms` : '—'],
+    ['Max weight ⚠', order.weight ? `${order.weight} gms` : '—'],
     ['Purity', order.purity],
     ['Look', order.look],
+    ['Type', typeLabel(order.type)],
     ['Pieces', order.pieces || '—'],
     ['Size', order.size || '—'],
     ['Width', order.width || '—'],

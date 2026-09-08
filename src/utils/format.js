@@ -59,6 +59,17 @@ export const isDone = (stage) => DONE_STAGES.includes(stage);
 export const PURITY_OPTIONS = ['9kt', '10kt', '14kt', '18kt', '20kt', '22kt', '24kt'];
 export const LOOK_OPTIONS = ['Antique', 'Golden', 'Patiala antique', 'Goldenish antique'];
 
+// Order "Type" — stored as a stable key, shown with a friendly label.
+export const TYPE_OPTIONS = [
+  { value: 'dandi', label: 'Dandi' },
+  { value: 'peech', label: 'Peech' },
+  { value: 'not_applicable', label: 'Not Applicable' },
+];
+export function typeLabel(v) {
+  const o = TYPE_OPTIONS.find((t) => t.value === v);
+  return o ? o.label : '—';
+}
+
 export function stageInfo(stage) {
   return STAGES[stage] || STAGES.new;
 }
@@ -174,9 +185,10 @@ export function whatsappMessage(order, { withLinks = false } = {}) {
     `🔔 New Order — ${order.appOrderNo || ''}`,
     `📋 Store ref: ${order.storeOrderNo || '—'}`,
     `💍 Item: ${order.itemName || '—'}`,
-    `⚖️ Weight: ${order.weight ? `${order.weight} gms` : '—'}`,
+    `⚠️ Max weight: ${order.weight ? `${order.weight} gms` : '—'}`,
     `✨ Purity: ${order.purity || '—'}`,
     `🎨 Look: ${order.look || '—'}`,
+    `🏷️ Type: ${typeLabel(order.type)}`,
   ];
   if (order.pieces) lines.push(`🔢 Pieces: ${order.pieces}`);
   if (order.size) lines.push(`📐 Size: ${order.size}`);
