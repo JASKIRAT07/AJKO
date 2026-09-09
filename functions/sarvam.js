@@ -91,6 +91,30 @@ function stringifyCounts(c) {
   };
 }
 
+const ZERO_COUNTS = () => ({ new_count: 0, in_process_count: 0, ready_count: 0, overdue_count: 0 });
+
+// Aggregate REAL order counts per channelId, mirroring the app's stage buckets:
+// "New (Edited)" rolls up into New; overdue = any pending order past its due
+// date (IST). This is the SINGLE source of truth used by BOTH the daily job and
+// the per-channel test, so the test validates exactly what the daily job sends.
+function computeCountsByChannel(orderDocs, today) {
+  const byChannel = {};
+  orderDocs.forEach((d) => {
+    const o = d.data();
+    if (o.isDraft || !o.channelId) return;
+    const c = byChannel[o.channelId] || (byChannel[o.channelId] = ZERO_COUNTS());
+    const st = o.stage;
+    if (st === 'new' || st === 'newedited') c.new_count += 1;
+    else if (st === 'inprogress') c.in_process_count += 1;
+    else if (st === 'ready') c.ready_count += 1;
+    if (isPending(st)) {
+      const ymd = istYMD(toDate(o.dueDate));
+      if (ymd && ymd < today) c.overdue_count += 1;
+    }
+  });
+  return byChannel;
+}
+
 // ---- the one place that talks to Sarvam -------------------------------------
 // Places a single outbound call. Never throws — returns a structured result and
 // logs the full request + Sarvam's response (including any error body).
@@ -199,25 +223,9 @@ exports.dailyVendorCalls = onSchedule(
       db.collection('orders').get(),
     ]);
 
-    // Aggregate counts per channel (orders belong to a channel; a vendor works
-    // their channel). Mirrors the app's stage buckets: "New (Edited)" rolls up
-    // into New; overdue = any pending order past its due date.
-    const byChannel = {};
-    ordersSnap.docs.forEach((d) => {
-      const o = d.data();
-      if (o.isDraft || !o.channelId) return;
-      const c = byChannel[o.channelId] || (byChannel[o.channelId] = {
-        new_count: 0, in_process_count: 0, ready_count: 0, overdue_count: 0,
-      });
-      const st = o.stage;
-      if (st === 'new' || st === 'newedited') c.new_count += 1;
-      else if (st === 'inprogress') c.in_process_count += 1;
-      else if (st === 'ready') c.ready_count += 1;
-      if (isPending(st)) {
-        const ymd = istYMD(toDate(o.dueDate));
-        if (ymd && ymd < today) c.overdue_count += 1;
-      }
-    });
+    // Aggregate real order counts per channel (single source of truth, shared
+    // with the per-channel test so both compute counts identically).
+    const byChannel = computeCountsByChannel(ordersSnap.docs, today);
 
     const vendors = usersSnap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
@@ -236,7 +244,7 @@ exports.dailyVendorCalls = onSchedule(
         const phone = toE164India(v.phone);
         if (!phone) { logger.warn(`skip ${v.id}: no valid phone`); skipped += 1; continue; }
 
-        const c = byChannel[v.channelId] || { new_count: 0, in_process_count: 0, ready_count: 0, overdue_count: 0 };
+        const c = byChannel[v.channelId] || ZERO_COUNTS();
         const total = c.new_count + c.in_process_count + c.ready_count + c.overdue_count;
         if (total === 0) { logger.info(`skip ${v.id}: all counts zero`); skipped += 1; continue; }
 
@@ -258,3 +266,117 @@ exports.dailyVendorCalls = onSchedule(
     logger.info(`dailyVendorCalls done — placed=${placed} skipped=${skipped} failed=${failed} of ${vendors.length} vendor(s)`);
   },
 );
+
+// ---- CONTROLLED PER-CHANNEL TEST (HTTP) -------------------------------------
+// Compute the REAL counts for ONE channel (by code, e.g. "PAPAC") using the same
+// logic as the daily job, log them, and place ONE call to that channel's vendor
+// (phone from the member record). Returns the computed counts + vendor + Sarvam
+// response so you can verify without digging through logs. Gated by the Sarvam
+// API key (X-Test-Key header or ?key=).
+//
+// Because this is a deliberate controlled test to a KNOWN vendor, it does NOT
+// apply the daily skip rules (aiCallsEnabled / upset-pause / all-zero) — it
+// reports those flags so you can see them, but it still places the call. Pass
+// {"dryRun":true} to compute + log the counts WITHOUT placing a call.
+//
+//   curl -X POST "<function-url>" \
+//     -H "X-Test-Key: <SARVAM_API_KEY>" -H "Content-Type: application/json" \
+//     -d '{"channel":"PAPAC"}'
+exports.sarvamTestChannelCall = onRequest({ secrets: [SARVAM_API_KEY] }, async (req, res) => {
+  try {
+    const b = (req.body && typeof req.body === 'object') ? req.body : {};
+    const key = req.get('X-Test-Key') || req.query.key || b.key;
+    if (!key || key !== SARVAM_API_KEY.value()) {
+      res.status(401).json({ error: 'Unauthorized. Pass the Sarvam API key as the "X-Test-Key" header or "?key=".' });
+      return;
+    }
+
+    const wanted = String(b.channel || req.query.channel || '').trim();
+    if (!wanted) { res.status(400).json({ error: 'Missing "channel" (the channel code, e.g. "PAPAC").' }); return; }
+    const dryRun = b.dryRun === true || req.query.dryRun === 'true';
+
+    const date = istYMD(new Date());
+    const today = date;
+
+    const [channelsSnap, usersSnap, ordersSnap] = await Promise.all([
+      db.collection('channels').get(),
+      db.collection('users').get(),
+      db.collection('orders').get(),
+    ]);
+
+    // Resolve the channel by code (case-insensitive), name, or doc id.
+    const w = wanted.toLowerCase();
+    const chDoc = channelsSnap.docs.find((d) => {
+      const c = d.data();
+      return d.id === wanted
+        || String(c.code || '').trim().toLowerCase() === w
+        || String(c.name || '').trim().toLowerCase() === w;
+    });
+    if (!chDoc) {
+      res.status(404).json({
+        error: `Channel "${wanted}" not found.`,
+        availableChannels: channelsSnap.docs.map((d) => d.data().code || d.id),
+      });
+      return;
+    }
+    const channelId = chDoc.id;
+    const channelCode = chDoc.data().code || channelId;
+
+    // Real counts for THIS channel (same helper the daily job uses).
+    const counts = computeCountsByChannel(ordersSnap.docs, today)[channelId] || ZERO_COUNTS();
+    logger.info(`channel test "${channelCode}" (${channelId}) — computed counts`, counts);
+
+    // The channel's active vendor(s); phone comes from the member (user) record.
+    const vendors = usersSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((u) => u.role === 'vendor' && u.isActive !== false && u.channelId === channelId);
+
+    const result = {
+      channel: channelCode,
+      channelId,
+      date,
+      counts: stringifyCounts(counts),
+      vendorsInChannel: vendors.map((v) => ({
+        id: v.id,
+        name: v.code || v.name || null,
+        phone: v.phone || null,
+        aiCallsEnabled: v.aiCallsEnabled !== false,
+        aiCallsPaused: v.aiCallsPaused === true,
+      })),
+    };
+
+    // Pick the first vendor with a usable phone.
+    const target = vendors.find((v) => toE164India(v.phone));
+    if (!target) {
+      result.placed = false;
+      result.note = vendors.length
+        ? 'No vendor in this channel has a valid phone number.'
+        : 'No active vendor found in this channel.';
+      logger.warn(`channel test "${channelCode}" — ${result.note}`);
+      res.status(200).json(result);
+      return;
+    }
+
+    const phone = toE164India(target.phone);
+    result.calledVendor = { id: target.id, name: target.code || target.name || null, phone };
+
+    if (dryRun) {
+      result.placed = false;
+      result.note = 'dryRun: counts computed and logged; no call placed.';
+      logger.info(`channel test "${channelCode}" — dryRun, no call placed`, result);
+      res.status(200).json(result);
+      return;
+    }
+
+    const out = await placeSarvamCall({ phone, counts, vendorId: target.id, date });
+    result.placed = out.ok;
+    result.sarvam = out;
+    logger.info(`channel test "${channelCode}" — call result`, {
+      vendorId: target.id, phone, counts, ok: out.ok, attempt_id: out.response && out.response.attempt_id,
+    });
+    res.status(out.ok ? 200 : 502).json(result);
+  } catch (e) {
+    logger.error('sarvamTestChannelCall failed', e);
+    res.status(500).json({ error: String((e && e.message) || e) });
+  }
+});
