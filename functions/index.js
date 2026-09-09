@@ -653,3 +653,8 @@ exports.resolveProfile = onCall(async (req) => {
 
   return { found: true, isActive: true, profile: { id, ...data } };
 });
+
+// ---- 6. Sarvam voice-agent outbound calls (Connection 1) — isolated module --
+// Registers NEW functions only (sarvamTestCall, dailyVendorCalls). This is the
+// ONLY change to this file; no existing function above is touched.
+Object.assign(exports, require('./sarvam'));
