@@ -5,12 +5,12 @@ import {
 const NAVS = {
   admin: [
     { to: '/', label: 'Home', icon: IcHome },
+    { to: '/do-calls', label: 'Do Calls', icon: IcPhoneOutgoing },
     { to: '/orders', label: 'Orders', icon: IcOrders },
     { to: '/conversations', label: 'Chat', icon: IcChannels },
     { to: '/members', label: 'Members', icon: IcMembers },
     { to: '/settings', label: 'Settings', icon: IcSettings },
     { to: '/ai-calls', label: 'AI Calls', icon: IcPhone },
-    { to: '/do-calls', label: 'Do Calls', icon: IcPhoneOutgoing },
   ],
   team: [
     { to: '/', label: 'Home', icon: IcHome },
