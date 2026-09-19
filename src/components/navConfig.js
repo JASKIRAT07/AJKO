@@ -1,5 +1,5 @@
 import {
-  IcHome, IcOrders, IcMembers, IcSettings, IcChannels, IcProfile, IcPhone,
+  IcHome, IcOrders, IcMembers, IcSettings, IcChannels, IcProfile, IcPhone, IcPhoneOutgoing,
 } from './Icons';
 
 const NAVS = {
@@ -10,6 +10,7 @@ const NAVS = {
     { to: '/members', label: 'Members', icon: IcMembers },
     { to: '/settings', label: 'Settings', icon: IcSettings },
     { to: '/ai-calls', label: 'AI Calls', icon: IcPhone },
+    { to: '/do-calls', label: 'Do Calls', icon: IcPhoneOutgoing },
   ],
   team: [
     { to: '/', label: 'Home', icon: IcHome },

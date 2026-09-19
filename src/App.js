@@ -15,6 +15,7 @@ import Settings from './screens/Settings';
 import Members from './screens/Members';
 import AICalls from './screens/AICalls';
 import AICallDetail from './screens/AICallDetail';
+import DoCalls from './screens/DoCalls';
 import Sidebar from './components/Sidebar';
 import Splash from './components/Splash';
 import ScrollManager from './components/ScrollManager';
@@ -68,6 +69,7 @@ function Shell() {
         <Route path="/members" element={<RequireRole roles={['admin']}><Members /></RequireRole>} />
         <Route path="/ai-calls" element={<RequireRole roles={['admin']}><AICalls /></RequireRole>} />
         <Route path="/ai-calls/:callId" element={<RequireRole roles={['admin']}><AICallDetail /></RequireRole>} />
+        <Route path="/do-calls" element={<RequireRole roles={['admin']}><DoCalls /></RequireRole>} />
         <Route path="/settings" element={<RequireRole roles={['admin']}><Settings /></RequireRole>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

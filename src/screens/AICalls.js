@@ -99,8 +99,8 @@ export default function AICalls() {
 
       <div className="screen screen-pad-bottom">
         <div className="toggle" style={{ display: 'flex', width: '100%', marginBottom: 14 }}>
-          <button className={tab === 'log' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('log')}>Call log</button>
-          <button className={tab === 'vendors' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('vendors')}>Vendors</button>
+          <button className={tab === 'log' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('log')}>AI Call Log</button>
+          <button className={tab === 'vendors' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('vendors')}>Vendor Settings</button>
         </div>
 
         {tab === 'log' ? (

@@ -126,6 +126,18 @@ export function useCalls(enabled) {
   );
 }
 
+// "Do Calls" records (admin only) — staff→karigar masked calls placed from the
+// app. A NEW, SEPARATE collection from `calls` (the AI reminder calls); the two
+// never mix. Gated by `enabled` so non-admins never subscribe. Empty until the
+// telephony provider (Exotel) is wired and real calls start writing here.
+export function useDoCalls(enabled) {
+  return useLiveQuery(
+    () => (enabled ? collection(db, 'doCalls') : null),
+    [enabled],
+    (a, b) => ms(b.at) - ms(a.at) // newest first
+  );
+}
+
 // Derived helpers
 export function decorateOrders(orders) {
   return orders.map((o) => {
