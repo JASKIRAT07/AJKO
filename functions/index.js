@@ -658,3 +658,8 @@ exports.resolveProfile = onCall(async (req) => {
 // Registers NEW functions only (sarvamTestCall, dailyVendorCalls). This is the
 // ONLY change to this file; no existing function above is touched.
 Object.assign(exports, require('./sarvam'));
+
+// ---- 7. Plivo outbound call test (Step 1) — isolated module -----------------
+// Registers NEW functions only (plivoTestCall, plivoAnswer). No existing
+// function above is touched.
+Object.assign(exports, require('./plivo'));
