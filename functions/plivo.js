@@ -21,6 +21,7 @@ const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 
 // index.js calls initializeApp() before requiring this module; guard keeps it
 // safe in any load order.
@@ -400,3 +401,212 @@ exports.getDoCallRecording = onCall({ secrets: R2_SECRETS }, async (req) => {
   );
   return { url };
 });
+
+// ============================================================================
+// STEP 4 — BROWSER CALLING (staff talk through AJKO, no SIM) + REAL MASKED,
+// RECORDED CALL wired to the "Do Calls" button.
+//
+// Flow:
+//   1. Staff opens Do Calls → browser SDK logs in as a Plivo endpoint (JWT from
+//      plivoBrowserToken).
+//   2. Staff taps "Call" on a karigar → browser places a WebRTC call, passing
+//      the karigar number + vendorId as X-PH headers.
+//   3. Plivo invokes plivoBrowserAnswer → we create the doCalls record, start
+//      recording the whole call, and <Dial> the karigar with the SHOP number as
+//      caller ID (masking) + a consent message.
+//   4. On recording ready → plivoDoCallRecordingDone stores it in R2 + links it.
+//   5. On hangup → plivoDoCallHangup finalizes the doCalls record.
+//
+// One-time setup: run plivoProvision (creates the Plivo Application + a shared
+// staff Endpoint, stores ids in Firestore config/plivo).
+// ============================================================================
+
+const BROWSER_ANSWER_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoBrowserAnswer';
+const DOCALL_HANGUP_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallHangup';
+const DOCALL_RECORDING_DONE_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallRecordingDone';
+
+const plivoAuthHeader = () => `Basic ${Buffer.from(`${PLIVO_AUTH_ID.value()}:${PLIVO_AUTH_TOKEN.value()}`).toString('base64')}`;
+const plivoBase = () => `https://api.plivo.com/v1/Account/${PLIVO_AUTH_ID.value()}`;
+
+// Verify the signed-in caller is an active admin or team member (the people who
+// place calls). Returns the user doc.
+async function requireStaff(req) {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const snap = await db.collection('users').where('authUid', '==', req.auth.uid).limit(1).get();
+  if (snap.empty) throw new HttpsError('permission-denied', 'No profile.');
+  const u = snap.docs[0].data();
+  if (u.isActive === false || !['admin', 'team'].includes(u.role)) {
+    throw new HttpsError('permission-denied', 'Staff only.');
+  }
+  return { id: snap.docs[0].id, ...u };
+}
+
+// ---- 8. ONE-TIME PROVISION (HTTP, gated) -----------------------------------
+// Creates the Plivo Application (pointing at our answer/hangup URLs) and a
+// shared staff Endpoint, and saves their ids to Firestore config/plivo.
+exports.plivoProvision = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, async (req, res) => {
+  try {
+    const b = (req.body && typeof req.body === 'object') ? req.body : {};
+    const key = req.get('X-Test-Key') || req.query.key || b.key;
+    if (!key || key !== PLIVO_AUTH_TOKEN.value()) { res.status(401).json({ error: 'Unauthorized.' }); return; }
+
+    // Create the Application.
+    const appRes = await fetch(`${plivoBase()}/Application/`, {
+      method: 'POST',
+      headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        app_name: `ajko-browser-${Date.now()}`,
+        answer_url: BROWSER_ANSWER_URL,
+        answer_method: 'POST',
+        hangup_url: DOCALL_HANGUP_URL,
+        hangup_method: 'POST',
+      }),
+    });
+    const appData = await appRes.json().catch(() => ({}));
+    if (!appRes.ok) { res.status(502).json({ step: 'application', plivo: appData }); return; }
+    const appId = String(appData.app_id);
+
+    // Create a shared staff Endpoint attached to that Application.
+    const username = `ajkostaff${Math.floor(Math.random() * 1e6)}`;
+    const password = crypto.randomBytes(12).toString('hex'); // not stored; JWT login doesn't need it
+    const epRes = await fetch(`${plivoBase()}/Endpoint/`, {
+      method: 'POST',
+      headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, alias: 'AJKO Staff', app_id: appId }),
+    });
+    const epData = await epRes.json().catch(() => ({}));
+    if (!epRes.ok) { res.status(502).json({ step: 'endpoint', plivo: epData }); return; }
+    const endpointUsername = String(epData.username || username);
+
+    await db.collection('config').doc('plivo').set({
+      appId, endpointUsername, provisionedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    logger.info('plivoProvision done', { appId, endpointUsername });
+    res.status(200).json({ ok: true, appId, endpointUsername });
+  } catch (e) {
+    logger.error('plivoProvision failed', e);
+    res.status(500).json({ error: String((e && e.message) || e) });
+  }
+});
+
+// ---- 9. BROWSER LOGIN TOKEN (callable, staff) ------------------------------
+// Mints a short-lived Plivo JWT so the browser SDK can register the endpoint
+// without ever seeing the endpoint password.
+exports.plivoBrowserToken = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, async (req) => {
+  await requireStaff(req);
+  const cfg = (await db.collection('config').doc('plivo').get()).data();
+  if (!cfg || !cfg.appId || !cfg.endpointUsername) {
+    throw new HttpsError('failed-precondition', 'Plivo not provisioned yet. Run plivoProvision.');
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const tokRes = await fetch(`${plivoBase()}/JWT/Token/`, {
+    method: 'POST',
+    headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      iss: PLIVO_AUTH_ID.value(),
+      sub: cfg.endpointUsername,
+      nbf: now,
+      exp: now + 3600, // 1h
+      per: { voice: { incoming_allow: false, outgoing_allow: true } },
+      app: cfg.appId,
+    }),
+  });
+  const data = await tokRes.json().catch(() => ({}));
+  if (!tokRes.ok || !data.token) {
+    logger.error('JWT token failed', data);
+    throw new HttpsError('internal', 'Could not get browser token.');
+  }
+  return { token: data.token, endpointUsername: cfg.endpointUsername };
+});
+
+// ---- 10. BROWSER ANSWER URL (HTTP, public) ---------------------------------
+// Invoked when the staff browser places a call. Creates the doCalls record,
+// starts recording the whole call, then dials the karigar with the SHOP number
+// as caller ID (masking) after a consent message.
+exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, async (req, res) => {
+  res.set('Content-Type', 'text/xml');
+  const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
+  const callUuid = String(p.CallUUID || '').trim();
+  // karigar comes from the X-PH header the browser set, falling back to the dialed To.
+  const karigar = String(p['X-PH-Karigar'] || p.XPHKarigar || p.To || '').trim();
+  const vendorId = String(p['X-PH-Vendorid'] || p.XPHVendorid || '') || null;
+
+  if (!karigar) {
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?>\n<Response><Speak>Sorry, no number to connect.</Speak></Response>');
+    return;
+  }
+
+  // Record the doCalls row (keyed by callUuid so later webhooks can find it).
+  try {
+    await db.collection('doCalls').add({
+      callUuid, vendorId, karigar, channelId: p['X-PH-Channelid'] || null,
+      at: admin.firestore.FieldValue.serverTimestamp(), status: 'in-progress', source: 'browser',
+    });
+  } catch (e) { logger.error('doCalls create failed', e); }
+
+  // Start recording the whole call (bridged conversation). Best-effort.
+  try {
+    if (callUuid) {
+      await fetch(`${plivoBase()}/Call/${callUuid}/Record/`, {
+        method: 'POST',
+        headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_format: 'mp3', callback_url: DOCALL_RECORDING_DONE_URL, callback_method: 'POST' }),
+      });
+    }
+  } catch (e) { logger.error('start record failed', e); }
+
+  const consent = `${BRIDGE_ANSWER_URL}?leg=b`; // reuse the Punjabi-ready consent snippet
+  const xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<Response>'
+    + `<Speak>${escapeXml(CONSENT_TEXT)}</Speak>`
+    + `<Dial callerId="${escapeXml(PLIVO_NUMBER)}" callerName="AJKO" timeout="30" `
+    + `action="${escapeXml(DOCALL_HANGUP_URL)}" confirmSound="${escapeXml(consent)}">`
+    + `<Number>${escapeXml(karigar)}</Number>`
+    + '</Dial>'
+    + '</Response>';
+  logger.info('Plivo → browser answer', { callUuid, karigar, vendorId });
+  res.status(200).send(xml);
+});
+
+// ---- 11. DO-CALL HANGUP (HTTP, public) -------------------------------------
+// Finalizes the doCalls record when the call ends.
+exports.plivoDoCallHangup = onRequest(async (req, res) => {
+  const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
+  const callUuid = String(p.CallUUID || '').trim();
+  const dur = Number(p.Duration || p.BillDuration || p.DialBLegDuration || 0) || null;
+  try {
+    if (callUuid) {
+      const snap = await db.collection('doCalls').where('callUuid', '==', callUuid).limit(1).get();
+      if (!snap.empty) {
+        await snap.docs[0].ref.set({ status: 'completed', durationSec: dur, pickedUp: dur ? true : false }, { merge: true });
+      }
+    }
+  } catch (e) { logger.error('doCall hangup update failed', e); }
+  res.set('Content-Type', 'text/xml');
+  res.status(200).send('<?xml version="1.0" encoding="UTF-8"?>\n<Response></Response>');
+});
+
+// ---- 12. DO-CALL RECORDING DONE (HTTP, public) -----------------------------
+// Plivo posts the recording here → download → R2 → link it on the doCalls row.
+exports.plivoDoCallRecordingDone = onRequest(
+  { secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN, ...R2_SECRETS] },
+  async (req, res) => {
+    const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
+    const callUuid = String(p.CallUUID || '').trim();
+    const recordUrl = String(p.RecordUrl || p.RecordingUrl || p.recording_url || '').trim();
+    const dur = Number(p.RecordingDuration || p.Duration || 0) || null;
+    try {
+      if (recordUrl && callUuid) {
+        const key = `recordings/${callUuid}.mp3`;
+        await ingestRecordingToR2(recordUrl, key);
+        const snap = await db.collection('doCalls').where('callUuid', '==', callUuid).limit(1).get();
+        if (!snap.empty) {
+          await snap.docs[0].ref.set({ recordingKey: key, durationSec: dur }, { merge: true });
+        }
+        logger.info('doCall recording stored', { callUuid, key });
+      }
+    } catch (e) { logger.error('doCall recording ingest failed', e); }
+    res.status(200).json({ ok: true });
+  },
+);
