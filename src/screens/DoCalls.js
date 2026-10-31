@@ -4,6 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../context/AuthContext';
 import { functions } from '../firebase';
 import { useUsers, useChannels, useDoCalls } from '../hooks/useCollections';
+import { usePlivoBrowser } from '../hooks/usePlivoBrowser';
 import { toDate, formatDateTime } from '../utils/format';
 import BottomNav from '../components/BottomNav';
 import { IcBell, IcSearch } from '../components/Icons';
@@ -41,21 +42,29 @@ function fmtDur(sec) {
   return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 }
 
-// ── SINGLE INTEGRATION POINT ────────────────────────────────────────────────
-// Placing the real masked staff→karigar call is NOT wired yet (telephony
-// provider is switched on later). When it is, replace the body of this one
-// function with the real trigger (e.g. an httpsCallable to a Cloud Function
-// that calls Exotel's Connect API). Nothing else in this screen needs to change.
-function placeDoCall(vendor, onNotice) {
-  onNotice(`📞 Calling not yet enabled — “${vendor.code || vendor.name || 'vendor'}” will be called once telephony is switched on.`);
-}
-
 export default function DoCalls() {
   const nav = useNavigate();
   const { profile, isAdmin } = useAuth();
   const { data: users } = useUsers();
   const { data: channels } = useChannels(profile);
   const { data: doCalls } = useDoCalls(isAdmin); // NEW separate collection; empty for now
+
+  // Browser calling (staff talk through the app, no SIM). Logs in on the Do Calls
+  // screen; placeCall() dials a karigar via WebRTC, masked behind the shop number.
+  const { status: callStatus, call, placeCall, hangup } = usePlivoBrowser(isAdmin);
+  const [callNote, setCallNote] = useState('');
+
+  const onCall = (vendor) => {
+    if (callStatus !== 'ready') {
+      setCallNote(callStatus === 'connecting' ? 'Connecting the calling line… try again in a moment.'
+        : callStatus === 'unprovisioned' ? 'Calling isn’t set up yet (run provisioning once).'
+          : 'Calling line not ready — refresh the page.');
+      return;
+    }
+    if (!vendor.phone) { setCallNote(`${vendor.code || vendor.name} has no phone number on file.`); return; }
+    setCallNote('');
+    placeCall(vendor.phone, vendor);
+  };
 
   const [tab, setTab] = useState('calls'); // 'calls' | 'recordings'
 
@@ -84,7 +93,6 @@ export default function DoCalls() {
   const [channelFilter, setChannelFilter] = useState('all');
   const [chanSearch, setChanSearch] = useState(false);
   const [chanQuery, setChanQuery] = useState('');
-  const [callNotice, setCallNotice] = useState('');
 
   const chanMatches = useMemo(() => {
     const q = chanQuery.trim().toLowerCase();
@@ -151,10 +159,19 @@ export default function DoCalls() {
               </div>
             </div>
 
-            {callNotice && (
-              <div className="card glow-orange" style={{ margin: '12px 0', display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{ flex: 1, fontSize: 13 }}>{callNotice}</div>
-                <button className="btn btn-ghost" style={{ padding: '6px 10px' }} onClick={() => setCallNotice('')}>OK</button>
+            {/* Calling-line status */}
+            <div className="faint" style={{ fontSize: 12, margin: '8px 2px 2px' }}>
+              {callStatus === 'ready' ? '🟢 Calling line ready'
+                : callStatus === 'connecting' ? '⏳ Connecting calling line…'
+                  : callStatus === 'unprovisioned' ? '⚙️ Calling not set up yet (run provisioning once)'
+                    : callStatus === 'error' ? '🔴 Calling line unavailable — refresh'
+                      : ''}
+            </div>
+
+            {callNote && (
+              <div className="card glow-orange" style={{ margin: '10px 0', display: 'flex', gap: 10, alignItems: 'center' }}>
+                <div style={{ flex: 1, fontSize: 13 }}>{callNote}</div>
+                <button className="btn btn-ghost" style={{ padding: '6px 10px' }} onClick={() => setCallNote('')}>OK</button>
               </div>
             )}
 
@@ -171,7 +188,7 @@ export default function DoCalls() {
                         <div className="dt">{v.code && v.name && v.code !== v.name ? v.name : ''}</div>
                       </div>
                       <div className="rgt">
-                        <button className="btn btn-primary" style={{ padding: '8px 16px' }} onClick={() => placeDoCall(v, setCallNotice)}>Call</button>
+                        <button className="btn btn-primary" style={{ padding: '8px 16px' }} disabled={!!call} onClick={() => onCall(v)}>Call</button>
                       </div>
                     </div>
                   ))}
@@ -238,6 +255,24 @@ export default function DoCalls() {
               {chanMatches.length === 0 && <div className="muted" style={{ fontSize: 13, padding: '8px 2px' }}>No channels match.</div>}
             </div>
             <button className="btn btn-ghost btn-block" style={{ marginTop: 8 }} onClick={() => setChanSearch(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {call && (
+        <div style={{
+          position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 72,
+          width: '100%', maxWidth: 'var(--maxw)', zIndex: 40, padding: '0 16px',
+        }}>
+          <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 6px 24px rgba(0,0,0,.18)' }}>
+            <span style={{ fontSize: 20 }}>📞</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700 }}>{call.label}</div>
+              <div className="muted" style={{ fontSize: 12 }}>
+                {call.state === 'dialing' ? 'Dialing…' : call.state === 'ringing' ? 'Ringing…' : call.state === 'connected' ? 'Connected' : 'Ending…'}
+              </div>
+            </div>
+            <button className="btn btn-danger" style={{ padding: '8px 16px' }} onClick={hangup}>End</button>
           </div>
         </div>
       )}
