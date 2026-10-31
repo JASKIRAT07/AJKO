@@ -17,20 +17,35 @@
  * Secrets (set via `firebase functions:secrets:set …`, NEVER hardcoded):
  *   PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN.
  */
-const { onRequest } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
+const admin = require('firebase-admin');
+
+// index.js calls initializeApp() before requiring this module; guard keeps it
+// safe in any load order.
+if (!admin.apps.length) admin.initializeApp();
+const db = admin.firestore();
 
 const PLIVO_AUTH_ID = defineSecret('PLIVO_AUTH_ID');
 const PLIVO_AUTH_TOKEN = defineSecret('PLIVO_AUTH_TOKEN');
 
 // Cloudflare R2 (S3-compatible). Set via `firebase functions:secrets:set …`.
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const R2_ACCOUNT_ID = defineSecret('R2_ACCOUNT_ID');
 const R2_BUCKET = defineSecret('R2_BUCKET');
 const R2_ACCESS_KEY_ID = defineSecret('R2_ACCESS_KEY_ID');
 const R2_SECRET_ACCESS_KEY = defineSecret('R2_SECRET_ACCESS_KEY');
 const R2_SECRETS = [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY];
+
+function r2Client() {
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID.value()}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: R2_ACCESS_KEY_ID.value(), secretAccessKey: R2_SECRET_ACCESS_KEY.value() },
+  });
+}
 
 // Download a Plivo recording (Basic auth) and upload it to R2. Returns the key.
 async function ingestRecordingToR2(recordUrl, key) {
@@ -38,12 +53,7 @@ async function ingestRecordingToR2(recordUrl, key) {
   const dl = await fetch(recordUrl, { headers: { Authorization: `Basic ${auth}` } });
   if (!dl.ok) throw new Error(`download failed: HTTP ${dl.status}`);
   const buf = Buffer.from(await dl.arrayBuffer());
-  const client = new S3Client({
-    region: 'auto',
-    endpoint: `https://${R2_ACCOUNT_ID.value()}.r2.cloudflarestorage.com`,
-    credentials: { accessKeyId: R2_ACCESS_KEY_ID.value(), secretAccessKey: R2_SECRET_ACCESS_KEY.value() },
-  });
-  await client.send(new PutObjectCommand({
+  await r2Client().send(new PutObjectCommand({
     Bucket: R2_BUCKET.value(), Key: key, Body: buf, ContentType: 'audio/mpeg',
   }));
   return { key, bytes: buf.length };
@@ -343,10 +353,50 @@ exports.r2IngestRecording = onRequest(
       logger.info('R2 ingest → start', { recordUrl, objectKey });
       const out = await ingestRecordingToR2(recordUrl, objectKey);
       logger.info('R2 ingest → OK', out);
-      res.status(200).json({ ok: true, stored: out });
+
+      // Also write a doCalls record so it shows in the AJKO "Do Calls Recordings"
+      // tab (with the R2 key for playback). vendorId/durationSec are optional —
+      // the real masked-call flow will fill them; this test uses what's passed.
+      const ref = await db.collection('doCalls').add({
+        vendorId: b.vendorId || null,
+        karigar: b.karigar || null,
+        channelId: b.channelId || null,
+        durationSec: Number(b.durationSec) || null,
+        recordingKey: objectKey,
+        pickedUp: true,
+        source: 'r2IngestRecording-test',
+        at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      logger.info('doCalls record written', { id: ref.id, recordingKey: objectKey });
+
+      res.status(200).json({ ok: true, stored: out, doCallId: ref.id });
     } catch (e) {
       logger.error('r2IngestRecording failed', e);
       res.status(500).json({ ok: false, error: String((e && e.message) || e) });
     }
   },
 );
+
+// ============================================================================
+// STEP 3c — PLAY A RECORDING INSIDE AJKO (admin-only signed URL)
+// The "Do Calls Recordings" tab calls this with a recording's R2 key; it returns
+// a short-lived signed URL the <audio> player can load. Admin-only: recordings
+// are private and must never be a public link.
+// ============================================================================
+exports.getDoCallRecording = onCall({ secrets: R2_SECRETS }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+  // Verify the caller is an admin (recordings are sensitive).
+  const snap = await db.collection('users').where('authUid', '==', req.auth.uid).limit(1).get();
+  if (snap.empty || snap.docs[0].data().role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Admins only.');
+  }
+  const recordingKey = String(req.data && req.data.recordingKey || '').trim();
+  if (!recordingKey) throw new HttpsError('invalid-argument', 'Missing recordingKey.');
+
+  const url = await getSignedUrl(
+    r2Client(),
+    new GetObjectCommand({ Bucket: R2_BUCKET.value(), Key: recordingKey }),
+    { expiresIn: 3600 }, // 1 hour
+  );
+  return { url };
+});

@@ -1,10 +1,36 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../context/AuthContext';
+import { functions } from '../firebase';
 import { useUsers, useChannels, useDoCalls } from '../hooks/useCollections';
 import { toDate, formatDateTime } from '../utils/format';
 import BottomNav from '../components/BottomNav';
 import { IcBell, IcSearch } from '../components/Icons';
+
+// Plays a call recording. Recordings live in a private R2 bucket, so we fetch a
+// short-lived signed URL (admin-only) on tap rather than storing a public link.
+function RecordingPlayer({ call }) {
+  const [url, setUrl] = useState(call.recordingUrl || null);
+  const [state, setState] = useState(call.recordingUrl ? 'ready' : 'idle'); // idle|loading|ready|error
+  const load = async () => {
+    if (url || state === 'loading') return;
+    setState('loading');
+    try {
+      const { data } = await httpsCallable(functions, 'getDoCallRecording')({ recordingKey: call.recordingKey });
+      if (data && data.url) { setUrl(data.url); setState('ready'); } else setState('error');
+    } catch (e) { setState('error'); }
+  };
+  if (!call.recordingKey && !call.recordingUrl) {
+    return <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>No recording available.</div>;
+  }
+  if (url) return <audio src={url} controls preload="none" style={{ width: '100%', height: 40, marginTop: 10 }} />;
+  return (
+    <button className="btn btn-ghost btn-block" style={{ marginTop: 10 }} onClick={load} disabled={state === 'loading'}>
+      {state === 'loading' ? 'Loading…' : state === 'error' ? 'Couldn’t load — tap to retry' : '▶ Load recording'}
+    </button>
+  );
+}
 
 function ymd(d) {
   if (!d) return '';
@@ -183,10 +209,8 @@ export default function DoCalls() {
                         </div>
                       </div>
                     </div>
-                    {/* Recording player — populated once real recordings exist. */}
-                    {c.recordingUrl
-                      ? <audio src={c.recordingUrl} controls preload="none" style={{ width: '100%', height: 40, marginTop: 10 }} />
-                      : <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>No recording available.</div>}
+                    {/* Recording player — fetches a signed URL from R2 on demand. */}
+                    <RecordingPlayer call={c} />
                     {/* Transcript — populated once real transcripts exist. */}
                     {c.transcript && (
                       <div className="aic-trbox" style={{ marginTop: 10 }}><span className="lbl">Transcript</span><p style={{ whiteSpace: 'pre-wrap' }}>{c.transcript}</p></div>
