@@ -472,7 +472,7 @@ exports.plivoProvision = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] 
     const epRes = await fetch(`${plivoBase()}/Endpoint/`, {
       method: 'POST',
       headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, alias: 'AJKO Staff', app_id: appId }),
+      body: JSON.stringify({ username, password, alias: 'AJKO-Staff', app_id: appId }),
     });
     const epData = await epRes.json().catch(() => ({}));
     if (!epRes.ok) { res.status(502).json({ step: 'endpoint', plivo: epData }); return; }
