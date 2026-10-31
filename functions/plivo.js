@@ -98,3 +98,107 @@ exports.plivoAnswer = onRequest(async (req, res) => {
   res.set('Content-Type', 'text/xml');
   res.status(200).send(xml);
 });
+
+// ============================================================================
+// STEP 2 — MASKED BRIDGE TEST
+// Place a call to `first` (stands in for staff). When they answer, play a
+// consent message, then <Dial> the `karigar` number showing the SHOP number as
+// caller ID — so the karigar sees only +918065537772. The karigar also hears a
+// consent message on pickup (via confirmSound) before being connected.
+// ============================================================================
+
+const BRIDGE_ANSWER_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoBridgeAnswer';
+// English placeholder (swap for a Punjabi <Play> audio file later).
+const CONSENT_TEXT = 'This call is from A J K O and is recorded for quality purposes. Please hold while we connect you.';
+
+function escapeXml(s) {
+  return String(s || '').replace(/[<>&'"]/g, (c) => (
+    { '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]
+  ));
+}
+
+// ---- 3. MASKED BRIDGE TRIGGER (HTTP) ---------------------------------------
+// Gated by the Plivo Auth Token as X-Test-Key (same as plivoTestCall).
+//   curl -X POST "<plivoMaskTest-url>" \
+//     -H "X-Test-Key: <PLIVO_AUTH_TOKEN>" -H "Content-Type: application/json" \
+//     -d '{"first":"+919698200086","karigar":"+91XXXXXXXXXX"}'
+exports.plivoMaskTest = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, async (req, res) => {
+  try {
+    const b = (req.body && typeof req.body === 'object') ? req.body : {};
+    const key = req.get('X-Test-Key') || req.query.key || b.key;
+    if (!key || key !== PLIVO_AUTH_TOKEN.value()) {
+      res.status(401).json({ error: 'Unauthorized. Pass your Plivo Auth Token as the "X-Test-Key" header or "?key=".' });
+      return;
+    }
+
+    const first = String(b.first || req.query.first || '').trim();
+    const karigar = String(b.karigar || req.query.karigar || '').trim();
+    if (!first || !karigar) {
+      res.status(400).json({ error: 'Need both "first" (rings first) and "karigar" (gets bridged, sees the shop number) in E.164, e.g. +919698200086.' });
+      return;
+    }
+
+    const authId = PLIVO_AUTH_ID.value();
+    const url = `https://api.plivo.com/v1/Account/${authId}/Call/`;
+    const auth = Buffer.from(`${authId}:${PLIVO_AUTH_TOKEN.value()}`).toString('base64');
+    // Pass the karigar number to the answer XML via the query string.
+    const answerUrl = `${BRIDGE_ANSWER_URL}?karigar=${encodeURIComponent(karigar)}`;
+    const payload = { from: PLIVO_NUMBER, to: first, answer_url: answerUrl, answer_method: 'POST' };
+
+    logger.info('Plivo → POST Call (mask bridge)', { url, from: PLIVO_NUMBER, first, karigar, answerUrl });
+
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { data = text; }
+
+    if (!r.ok) {
+      logger.error(`Plivo HTTP ${r.status} (mask)`, { first, karigar, response: data });
+      res.status(502).json({ ok: false, status: r.status, requested: { from: PLIVO_NUMBER, first, karigar }, plivo: data });
+      return;
+    }
+    logger.info('Plivo OK (mask)', { first, karigar, response: data });
+    res.status(200).json({ ok: true, status: r.status, requested: { from: PLIVO_NUMBER, first, karigar }, plivo: data });
+  } catch (e) {
+    logger.error('plivoMaskTest failed', e);
+    res.status(500).json({ error: String((e && e.message) || e) });
+  }
+});
+
+// ---- 4. BRIDGE ANSWER URL (HTTP, public) -----------------------------------
+// Returns the Plivo XML for the bridge. Two modes:
+//   ?leg=b        → the short consent message played to the KARIGAR on pickup
+//                   (used as the <Dial confirmSound>).
+//   (default)     → consent to the FIRST party, then <Dial> the karigar with the
+//                   shop number as caller ID.
+exports.plivoBridgeAnswer = onRequest(async (req, res) => {
+  res.set('Content-Type', 'text/xml');
+  const q = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
+
+  // B-leg (karigar) consent snippet.
+  if (String(q.leg || '') === 'b') {
+    res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>\n<Response><Speak>${escapeXml(CONSENT_TEXT)}</Speak></Response>`);
+    return;
+  }
+
+  const karigar = String(q.karigar || '').trim();
+  if (!karigar) {
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?>\n<Response><Speak>Sorry, no number to connect.</Speak></Response>');
+    return;
+  }
+
+  const confirm = `${BRIDGE_ANSWER_URL}?leg=b`;
+  const xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<Response>'
+    + `<Speak>${escapeXml(CONSENT_TEXT)}</Speak>`
+    + `<Dial callerId="${escapeXml(PLIVO_NUMBER)}" callerName="AJKO" timeout="30" confirmSound="${escapeXml(confirm)}">`
+    + `<Number>${escapeXml(karigar)}</Number>`
+    + '</Dial>'
+    + '</Response>';
+  logger.info('Plivo → bridge answer', { karigar });
+  res.status(200).send(xml);
+});
