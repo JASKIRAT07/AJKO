@@ -24,6 +24,31 @@ const logger = require('firebase-functions/logger');
 const PLIVO_AUTH_ID = defineSecret('PLIVO_AUTH_ID');
 const PLIVO_AUTH_TOKEN = defineSecret('PLIVO_AUTH_TOKEN');
 
+// Cloudflare R2 (S3-compatible). Set via `firebase functions:secrets:set …`.
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const R2_ACCOUNT_ID = defineSecret('R2_ACCOUNT_ID');
+const R2_BUCKET = defineSecret('R2_BUCKET');
+const R2_ACCESS_KEY_ID = defineSecret('R2_ACCESS_KEY_ID');
+const R2_SECRET_ACCESS_KEY = defineSecret('R2_SECRET_ACCESS_KEY');
+const R2_SECRETS = [R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY];
+
+// Download a Plivo recording (Basic auth) and upload it to R2. Returns the key.
+async function ingestRecordingToR2(recordUrl, key) {
+  const auth = Buffer.from(`${PLIVO_AUTH_ID.value()}:${PLIVO_AUTH_TOKEN.value()}`).toString('base64');
+  const dl = await fetch(recordUrl, { headers: { Authorization: `Basic ${auth}` } });
+  if (!dl.ok) throw new Error(`download failed: HTTP ${dl.status}`);
+  const buf = Buffer.from(await dl.arrayBuffer());
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID.value()}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: R2_ACCESS_KEY_ID.value(), secretAccessKey: R2_SECRET_ACCESS_KEY.value() },
+  });
+  await client.send(new PutObjectCommand({
+    Bucket: R2_BUCKET.value(), Key: key, Body: buf, ContentType: 'audio/mpeg',
+  }));
+  return { key, bytes: buf.length };
+}
+
 // Non-secret config. The Plivo number we own (caller ID for the test call) and
 // the public URL Plivo calls back for the answer XML (same cloudfunctions.net
 // base, region us-central1 — set globally in index.js).
@@ -291,3 +316,37 @@ exports.plivoRecordDone = onRequest(async (req, res) => {
   res.set('Content-Type', 'text/xml');
   res.status(200).send('<?xml version="1.0" encoding="UTF-8"?>\n<Response><Speak>Thank you. Your recording is saved. Goodbye.</Speak></Response>');
 });
+
+// ============================================================================
+// STEP 3b — INGEST A RECORDING INTO CLOUDFLARE R2
+// Standalone + isolated: give it a Plivo recording URL, it downloads the mp3 and
+// uploads it to your R2 bucket. Tested on its own (decoupled from Plivo's
+// recording-ready delay); the SAME ingestRecordingToR2() helper will be called
+// from the real masked-call webhook once we assemble the full flow.
+// Needs the 4 R2 secrets set before deploy: R2_ACCOUNT_ID, R2_BUCKET,
+// R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.
+// ============================================================================
+exports.r2IngestRecording = onRequest(
+  { secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN, ...R2_SECRETS] },
+  async (req, res) => {
+    try {
+      const b = (req.body && typeof req.body === 'object') ? req.body : {};
+      const key = req.get('X-Test-Key') || req.query.key || b.key;
+      if (!key || key !== PLIVO_AUTH_TOKEN.value()) {
+        res.status(401).json({ error: 'Unauthorized. Pass your Plivo Auth Token as the "X-Test-Key" header or "?key=".' });
+        return;
+      }
+      const recordUrl = String(b.recordUrl || req.query.recordUrl || '').trim();
+      if (!recordUrl) { res.status(400).json({ error: 'Missing "recordUrl" (the Plivo recording .mp3 URL).' }); return; }
+
+      const objectKey = String(b.objectKey || req.query.objectKey || `recordings/test/${Date.now()}.mp3`).trim();
+      logger.info('R2 ingest → start', { recordUrl, objectKey });
+      const out = await ingestRecordingToR2(recordUrl, objectKey);
+      logger.info('R2 ingest → OK', out);
+      res.status(200).json({ ok: true, stored: out });
+    } catch (e) {
+      logger.error('r2IngestRecording failed', e);
+      res.status(500).json({ ok: false, error: String((e && e.message) || e) });
+    }
+  },
+);
