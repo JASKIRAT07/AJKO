@@ -55,7 +55,7 @@ export default function DoCalls() {
   // Browser calling (staff talk through the app, no SIM). Logs in on the Do Calls
   // screen; placeCall() dials a karigar via WebRTC, masked behind the shop number.
   const {
-    status: callStatus, call, muted, speakerOn, duration, micLevel, minimized,
+    status: callStatus, call, muted, speakerOn, duration, micLevel, minimized, errorMsg,
     placeCall, hangup, toggleMute, toggleSpeaker, minimize, expand,
   } = usePlivoBrowser(canCall);
   const [callNote, setCallNote] = useState('');
@@ -182,6 +182,9 @@ export default function DoCalls() {
                     : callStatus === 'error' ? '🔴 Calling line unavailable — refresh'
                       : ''}
             </div>
+            {(callStatus === 'error' || callStatus === 'unprovisioned') && errorMsg && (
+              <div className="faint" style={{ fontSize: 11, margin: '0 2px 6px', color: 'var(--red)', wordBreak: 'break-word' }}>{errorMsg}</div>
+            )}
 
             {callNote && (
               <div className="card glow-orange" style={{ margin: '10px 0', display: 'flex', gap: 10, alignItems: 'center' }}>

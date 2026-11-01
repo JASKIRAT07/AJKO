@@ -26,6 +26,7 @@ export function usePlivoBrowser(enabled) {
   const [duration, setDuration] = useState(0);
   const [micLevel, setMicLevel] = useState(0);
   const [minimized, setMinimized] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const startRef = useRef(0);
   const durTimer = useRef(null);
@@ -74,8 +75,13 @@ export function usePlivoBrowser(enabled) {
         const c = p.client;
         try { c.setRingTone(false); } catch (e) { /* no incoming ringtone */ }
 
-        c.on('onLogin', () => !cancelled && setStatus('ready'));
-        c.on('onLoginFailed', () => !cancelled && setStatus('error'));
+        c.on('onLogin', () => { if (!cancelled) { setStatus('ready'); setErrorMsg(''); } });
+        c.on('onLoginFailed', (code) => {
+          if (cancelled) return;
+          let msg = `login failed (${code})`;
+          try { msg = `${msg}: ${c.getErrorStringByErrorCodes(code)}`; } catch (e) { /* noop */ }
+          setErrorMsg(msg); setStatus('error');
+        });
         // Keep the caller's line silent while the karigar is dialed (no ringing "ting").
         c.on('onCalling', () => { if (cancelled) return; setAllAudioMuted(true); setCall((x) => (x ? { ...x, state: 'dialing' } : x)); });
         c.on('onCallRemoteRinging', () => { if (cancelled) return; setAllAudioMuted(true); setCall((x) => (x ? (x.state === 'connected' ? x : { ...x, state: 'ringing' }) : x)); });
@@ -94,7 +100,9 @@ export function usePlivoBrowser(enabled) {
         c.loginWithAccessToken(data.token);
       } catch (e) {
         if (cancelled) return;
-        setStatus(String(e && e.code).includes('failed-precondition') ? 'unprovisioned' : 'error');
+        const code = String((e && e.code) || '');
+        setErrorMsg(`${code || 'error'}: ${(e && e.message) || e}`);
+        setStatus(code.includes('failed-precondition') ? 'unprovisioned' : 'error');
       }
     })();
 
@@ -165,7 +173,7 @@ export function usePlivoBrowser(enabled) {
   const expand = useCallback(() => setMinimized(false), []);
 
   return {
-    status, call, muted, speakerOn, duration, micLevel, minimized,
+    status, call, muted, speakerOn, duration, micLevel, minimized, errorMsg,
     placeCall, hangup, toggleMute, toggleSpeaker, minimize, expand,
   };
 }
