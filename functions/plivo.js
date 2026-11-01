@@ -537,10 +537,24 @@ exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOK
     return;
   }
 
+  // Resolve the vendor server-side so the record shows the real name + channel.
+  let channelId = null; let vendorName = null; let vendorCode = null;
+  try {
+    if (vendorId) {
+      const vdoc = await db.collection('users').doc(vendorId).get();
+      if (vdoc.exists) {
+        const vd = vdoc.data();
+        channelId = vd.channelId || null;
+        vendorCode = vd.code || null;
+        vendorName = vd.name || null;
+      }
+    }
+  } catch (e) { logger.warn('vendor lookup failed', e); }
+
   // Record the doCalls row (keyed by callUuid so later webhooks can find it).
   try {
     await db.collection('doCalls').add({
-      callUuid, vendorId, karigar, channelId: p['X-PH-Channelid'] || null,
+      callUuid, vendorId, vendorCode, vendorName, karigar, channelId,
       at: admin.firestore.FieldValue.serverTimestamp(), status: 'in-progress', source: 'browser',
     });
   } catch (e) { logger.error('doCalls create failed', e); }
@@ -593,9 +607,12 @@ exports.plivoDoCallRecordingDone = onRequest(
   { secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN, ...R2_SECRETS] },
   async (req, res) => {
     const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
-    const callUuid = String(p.CallUUID || '').trim();
-    const recordUrl = String(p.RecordUrl || p.RecordingUrl || p.recording_url || '').trim();
-    const dur = Number(p.RecordingDuration || p.Duration || 0) || null;
+    // The Record-a-Call API callback uses snake_case (call_uuid / record_url);
+    // the <Record> XML action uses CamelCase. Accept both.
+    const callUuid = String(p.CallUUID || p.call_uuid || '').trim();
+    const recordUrl = String(p.RecordUrl || p.record_url || p.RecordingUrl || p.recording_url || '').trim();
+    const dur = Number(p.RecordingDuration || p.recording_duration || p.Duration || 0) || null;
+    logger.info('Plivo → DoCall recording callback', { keys: Object.keys(p), callUuid, hasUrl: !!recordUrl });
     try {
       if (recordUrl && callUuid) {
         const key = `recordings/${callUuid}.mp3`;
@@ -605,6 +622,8 @@ exports.plivoDoCallRecordingDone = onRequest(
           await snap.docs[0].ref.set({ recordingKey: key, durationSec: dur }, { merge: true });
         }
         logger.info('doCall recording stored', { callUuid, key });
+      } else {
+        logger.warn('recording callback missing url/callUuid', { callUuid, hasUrl: !!recordUrl });
       }
     } catch (e) { logger.error('doCall recording ingest failed', e); }
     res.status(200).json({ ok: true });

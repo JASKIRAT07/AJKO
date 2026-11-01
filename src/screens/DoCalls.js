@@ -7,6 +7,7 @@ import { useUsers, useChannels, useDoCalls } from '../hooks/useCollections';
 import { usePlivoBrowser } from '../hooks/usePlivoBrowser';
 import { toDate, formatDateTime } from '../utils/format';
 import BottomNav from '../components/BottomNav';
+import CallScreen from '../components/CallScreen';
 import { IcBell, IcSearch } from '../components/Icons';
 
 // Plays a call recording. Recordings live in a private R2 bucket, so we fetch a
@@ -51,7 +52,10 @@ export default function DoCalls() {
 
   // Browser calling (staff talk through the app, no SIM). Logs in on the Do Calls
   // screen; placeCall() dials a karigar via WebRTC, masked behind the shop number.
-  const { status: callStatus, call, placeCall, hangup } = usePlivoBrowser(isAdmin);
+  const {
+    status: callStatus, call, muted, speakerOn, duration, micLevel,
+    placeCall, hangup, toggleMute, toggleSpeaker,
+  } = usePlivoBrowser(isAdmin);
   const [callNote, setCallNote] = useState('');
 
   const onCall = (vendor) => {
@@ -259,23 +263,16 @@ export default function DoCalls() {
         </div>
       )}
 
-      {call && (
-        <div style={{
-          position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 72,
-          width: '100%', maxWidth: 'var(--maxw)', zIndex: 40, padding: '0 16px',
-        }}>
-          <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 6px 24px rgba(0,0,0,.18)' }}>
-            <span style={{ fontSize: 20 }}>📞</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700 }}>{call.label}</div>
-              <div className="muted" style={{ fontSize: 12 }}>
-                {call.state === 'dialing' ? 'Dialing…' : call.state === 'ringing' ? 'Ringing…' : call.state === 'connected' ? 'Connected' : 'Ending…'}
-              </div>
-            </div>
-            <button className="btn btn-danger" style={{ padding: '8px 16px' }} onClick={hangup}>End</button>
-          </div>
-        </div>
-      )}
+      <CallScreen
+        call={call}
+        duration={duration}
+        micLevel={micLevel}
+        muted={muted}
+        speakerOn={speakerOn}
+        onMute={toggleMute}
+        onSpeaker={toggleSpeaker}
+        onEnd={hangup}
+      />
 
       <BottomNav />
     </div>
