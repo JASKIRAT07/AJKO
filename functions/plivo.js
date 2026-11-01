@@ -425,6 +425,7 @@ const BROWSER_ANSWER_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/pl
 const DOCALL_HANGUP_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallHangup';
 const DOCALL_RECORDING_DONE_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallRecordingDone';
 const DOCALL_TRANSCRIPTION_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallTranscription';
+const DOCALL_LEG_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallLeg';
 
 const plivoAuthHeader = () => `Basic ${Buffer.from(`${PLIVO_AUTH_ID.value()}:${PLIVO_AUTH_TOKEN.value()}`).toString('base64')}`;
 const plivoBase = () => `https://api.plivo.com/v1/Account/${PLIVO_AUTH_ID.value()}`;
@@ -433,13 +434,33 @@ const plivoBase = () => `https://api.plivo.com/v1/Account/${PLIVO_AUTH_ID.value(
 // place calls). Returns the user doc.
 async function requireStaff(req) {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
-  const snap = await db.collection('users').where('authUid', '==', req.auth.uid).limit(1).get();
-  if (snap.empty) throw new HttpsError('permission-denied', 'No profile.');
-  const u = snap.docs[0].data();
+  const uid = req.auth.uid;
+  const token = req.auth.token || {};
+  const users = db.collection('users');
+  const last10 = (v) => String(v || '').replace(/\D/g, '').slice(-10);
+
+  // Find the caller's user doc robustly: authUid → verified phone → email.
+  let doc = null;
+  let s = await users.where('authUid', '==', uid).limit(1).get();
+  if (!s.empty) doc = s.docs[0];
+  if (!doc && token.phone_number) {
+    const want = last10(token.phone_number);
+    const all = await users.get();
+    doc = all.docs.find((d) => want && last10(d.data().phone) === want) || null;
+  }
+  if (!doc && token.email) {
+    s = await users.where('email', '==', String(token.email).toLowerCase()).limit(1).get();
+    if (!s.empty) doc = s.docs[0];
+  }
+  if (!doc) {
+    logger.error('requireStaff: no profile', { uid, phone: token.phone_number || null, email: token.email || null });
+    throw new HttpsError('permission-denied', 'No profile found for your account.');
+  }
+  const u = doc.data();
   if (u.isActive === false || !['admin', 'team'].includes(u.role)) {
     throw new HttpsError('permission-denied', 'Staff only.');
   }
-  return { id: snap.docs[0].id, ...u };
+  return { id: doc.id, ...u };
 }
 
 // ---- 8. ONE-TIME PROVISION (HTTP, gated) -----------------------------------
@@ -553,6 +574,7 @@ exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOK
   // karigar comes from the X-PH header the browser set, falling back to the dialed To.
   const karigar = String(p['X-PH-Karigar'] || p.XPHKarigar || p.To || '').trim();
   const vendorId = String(p['X-PH-Vendorid'] || p.XPHVendorid || '') || null;
+  const clientCallId = String(p['X-PH-Callid'] || p.XPHCallid || '') || null;
 
   if (!karigar) {
     res.status(200).send('<?xml version="1.0" encoding="UTF-8"?>\n<Response><Speak>Sorry, no number to connect.</Speak></Response>');
@@ -576,8 +598,8 @@ exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOK
   // Record the doCalls row (keyed by callUuid so later webhooks can find it).
   try {
     await db.collection('doCalls').add({
-      callUuid, vendorId, vendorCode, vendorName, karigar, channelId,
-      at: admin.firestore.FieldValue.serverTimestamp(), status: 'in-progress', source: 'browser',
+      callUuid, clientCallId, vendorId, vendorCode, vendorName, karigar, channelId,
+      at: admin.firestore.FieldValue.serverTimestamp(), status: 'in-progress', legStatus: 'dialing', source: 'browser',
     });
   } catch (e) { logger.error('doCalls create failed', e); }
 
@@ -602,16 +624,19 @@ exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOK
     }
   } catch (e) { logger.error('start record failed', e); }
 
-  const consent = `${BRIDGE_ANSWER_URL}?leg=b`; // reuse the Punjabi-ready consent snippet
+  // The CALLER (staff) does NOT hear the consent — only the karigar does, via
+  // confirmSound on the B-leg. Dial callbackUrl pushes live leg status (ringing/
+  // answered) so the app can show it.
+  const consent = `${BRIDGE_ANSWER_URL}?leg=b`;
   const xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
     + '<Response>'
-    + `<Speak>${escapeXml(CONSENT_TEXT)}</Speak>`
     + `<Dial callerId="${escapeXml(PLIVO_NUMBER)}" callerName="AJKO" timeout="30" `
-    + `action="${escapeXml(DOCALL_HANGUP_URL)}" confirmSound="${escapeXml(consent)}">`
+    + `action="${escapeXml(DOCALL_HANGUP_URL)}" callbackUrl="${escapeXml(DOCALL_LEG_URL)}" callbackMethod="POST" `
+    + `confirmSound="${escapeXml(consent)}">`
     + `<Number>${escapeXml(karigar)}</Number>`
     + '</Dial>'
     + '</Response>';
-  logger.info('Plivo → browser answer', { callUuid, karigar, vendorId });
+  logger.info('Plivo → browser answer', { callUuid, karigar, vendorId, clientCallId });
   res.status(200).send(xml);
 });
 
@@ -680,5 +705,26 @@ exports.plivoDoCallTranscription = onRequest(async (req, res) => {
       if (!snap.empty) await snap.docs[0].ref.set({ transcript: text }, { merge: true });
     }
   } catch (e) { logger.error('transcription store failed', e); }
+  res.status(200).json({ ok: true });
+});
+
+// ---- 14. DO-CALL LEG STATUS (HTTP, public) ---------------------------------
+// The <Dial> callbackUrl posts B-leg (karigar) events here. We map them to a
+// legStatus on the doCalls row (ringing / answered) so the call screen can show
+// live status. Keys are logged so the mapping can be refined if needed.
+exports.plivoDoCallLeg = onRequest(async (req, res) => {
+  const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
+  const callUuid = String(p.CallUUID || p.call_uuid || '').trim();
+  const blob = `${p.Event || p.event || ''} ${p.DialBLegStatus || p.DialStatus || p.Status || p.CallStatus || ''}`.toLowerCase();
+  let legStatus = null;
+  if (/(answer|connect|in-?progress)/.test(blob)) legStatus = 'answered';
+  else if (/ring/.test(blob)) legStatus = 'ringing';
+  logger.info('Plivo → dial leg', { keys: Object.keys(p), callUuid, blob: blob.trim(), legStatus });
+  try {
+    if (callUuid && legStatus) {
+      const snap = await db.collection('doCalls').where('callUuid', '==', callUuid).limit(1).get();
+      if (!snap.empty) await snap.docs[0].ref.set({ legStatus }, { merge: true });
+    }
+  } catch (e) { logger.error('leg status update failed', e); }
   res.status(200).json({ ok: true });
 });

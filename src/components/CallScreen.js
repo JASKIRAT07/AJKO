@@ -80,7 +80,7 @@ export default function CallScreen({
 
       {/* Who + state */}
       <div style={{ textAlign: 'center', marginTop: -8 }}>
-        <div style={{ color: '#7fd9a6', fontSize: 13, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 14 }}>AJKO · Masked call</div>
+        <div style={{ color: '#7fd9a6', fontSize: 13, letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 14 }}>AJKO</div>
         <div className={!connected ? 'cs-ring' : ''} style={{ display: 'inline-block' }}>
           <div className="cs-avatar">{initials(call.label)}</div>
         </div>

@@ -102,9 +102,11 @@ service cloud.firestore {
     }
 
     // "Do Calls" — staff→karigar masked calls placed from the app. Separate
-    // admin-only collection; never mixed with the AI reminder `calls` above.
+    // collection; never mixed with the AI reminder `calls` above. Admins + team
+    // can read (team needs live call status); only functions (admin) write.
     match /doCalls/{id} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin() || isTeam();
+      allow write: if isAdmin();
     }
 
     match /counters/{id} {
