@@ -55,8 +55,8 @@ export default function DoCalls() {
   // Browser calling (staff talk through the app, no SIM). Logs in on the Do Calls
   // screen; placeCall() dials a karigar via WebRTC, masked behind the shop number.
   const {
-    status: callStatus, call, muted, speakerOn, duration, micLevel, minimized, errorMsg,
-    placeCall, hangup, toggleMute, toggleSpeaker, minimize, expand,
+    status: callStatus, call, muted, volume, duration, micLevel, minimized, errorMsg,
+    placeCall, hangup, toggleMute, volumeUp, volumeDown, minimize, expand,
   } = usePlivoBrowser(canCall);
   const [callNote, setCallNote] = useState('');
 
@@ -301,10 +301,11 @@ export default function DoCalls() {
         duration={duration}
         micLevel={micLevel}
         muted={muted}
-        speakerOn={speakerOn}
+        volume={volume}
         minimized={minimized}
         onMute={toggleMute}
-        onSpeaker={toggleSpeaker}
+        onVolumeUp={volumeUp}
+        onVolumeDown={volumeDown}
         onEnd={hangup}
         onMinimize={minimize}
         onExpand={expand}

@@ -15,8 +15,8 @@ function fmt(sec) {
 }
 
 export default function CallScreen({
-  call, duration, micLevel, muted, speakerOn, minimized,
-  onMute, onSpeaker, onEnd, onMinimize, onExpand,
+  call, duration, micLevel, muted, volume, minimized,
+  onMute, onVolumeUp, onVolumeDown, onEnd, onMinimize, onExpand,
 }) {
   if (!call) return null;
   const connected = call.state === 'connected';
@@ -108,10 +108,11 @@ export default function CallScreen({
         </div>
 
         <div style={{ textAlign: 'center' }}>
-          <button className={`cs-btn ${speakerOn ? '' : 'on'}`} onClick={onSpeaker} aria-label="Speaker">
-            <span style={{ fontSize: 24 }}>{speakerOn ? '🔊' : '🔈'}</span>
-          </button>
-          <div style={{ fontSize: 11, marginTop: 7, color: '#cfeede' }}>{speakerOn ? 'Speaker on' : 'Speaker off'}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button className="cs-btn" style={{ width: 50, height: 50, fontSize: 26 }} onClick={onVolumeDown} aria-label="Volume down">−</button>
+            <button className="cs-btn" style={{ width: 50, height: 50, fontSize: 24 }} onClick={onVolumeUp} aria-label="Volume up">+</button>
+          </div>
+          <div style={{ fontSize: 11, marginTop: 7, color: '#cfeede' }}>🔊 Volume {Math.round((volume == null ? 1 : volume) * 100)}%</div>
         </div>
 
         <div style={{ textAlign: 'center' }}>

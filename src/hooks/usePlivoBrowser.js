@@ -1,9 +1,9 @@
 // Plivo Browser SDK integration for AJKO "Do Calls".
 // Staff browser registers as a Plivo endpoint (JWT) and places masked WebRTC
 // calls. Live state: dialing → ringing → connected (driven by the server's
-// per-call legStatus so "Ringing / Picked up" are accurate, since the browser
-// leg itself answers early). Mute (mic), speaker (output) on/off, live mic
-// level, duration, minimize. Mic only acquired during a call (permOnClick).
+// per-call legStatus so "Ringing / Picked up" are accurate). Controls: mute
+// (mic), volume −/+ (output), live mic level, duration, minimize. Mic only
+// acquired during a call (permOnClick).
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
@@ -11,6 +11,9 @@ import { functions, db } from '../firebase';
 
 function setAllAudioMuted(muted) {
   try { document.querySelectorAll('audio').forEach((el) => { el.muted = muted; }); } catch (e) { /* noop */ }
+}
+function setAllAudioVolume(v) {
+  try { document.querySelectorAll('audio').forEach((el) => { el.muted = false; el.volume = v; }); } catch (e) { /* noop */ }
 }
 function newCallId() {
   const u = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : '';
@@ -22,7 +25,7 @@ export function usePlivoBrowser(enabled) {
   const [status, setStatus] = useState('idle'); // idle|connecting|ready|error|unprovisioned
   const [call, setCall] = useState(null);        // { state, label }
   const [muted, setMuted] = useState(false);
-  const [speakerOn, setSpeakerOn] = useState(true);
+  const [volume, setVolume] = useState(1);       // 0..1 output volume
   const [duration, setDuration] = useState(0);
   const [micLevel, setMicLevel] = useState(0);
   const [minimized, setMinimized] = useState(false);
@@ -32,7 +35,7 @@ export function usePlivoBrowser(enabled) {
   const durTimer = useRef(null);
   const meterTimer = useRef(null);
   const micRaw = useRef(0);
-  const speakerRef = useRef(true);
+  const volRef = useRef(1);
   const callIdRef = useRef(null);
   const unsubDoc = useRef(null);
   const connectedRef = useRef(false);
@@ -44,7 +47,7 @@ export function usePlivoBrowser(enabled) {
   const stopDocSub = () => { if (unsubDoc.current) { try { unsubDoc.current(); } catch (e) { /* noop */ } unsubDoc.current = null; } };
   const resetCall = () => {
     clearTimers(); stopDocSub();
-    setCall(null); setMuted(false); setSpeakerOn(true); speakerRef.current = true;
+    setCall(null); setMuted(false); setVolume(1); volRef.current = 1;
     setDuration(0); setMicLevel(0); setMinimized(false); micRaw.current = 0;
     connectedRef.current = false; callIdRef.current = null;
   };
@@ -52,7 +55,7 @@ export function usePlivoBrowser(enabled) {
   const markConnected = () => {
     if (connectedRef.current) return;
     connectedRef.current = true;
-    setAllAudioMuted(!speakerRef.current);
+    setAllAudioVolume(volRef.current); // unmute + apply chosen volume
     setCall((x) => (x ? { ...x, state: 'connected' } : x));
     startRef.current = Date.now();
     setDuration(0);
@@ -82,11 +85,8 @@ export function usePlivoBrowser(enabled) {
           try { msg = `${msg}: ${c.getErrorStringByErrorCodes(code)}`; } catch (e) { /* noop */ }
           setErrorMsg(msg); setStatus('error');
         });
-        // Keep the caller's line silent while the karigar is dialed (no ringing "ting").
         c.on('onCalling', () => { if (cancelled) return; setAllAudioMuted(true); setCall((x) => (x ? { ...x, state: 'dialing' } : x)); });
         c.on('onCallRemoteRinging', () => { if (cancelled) return; setAllAudioMuted(true); setCall((x) => (x ? (x.state === 'connected' ? x : { ...x, state: 'ringing' }) : x)); });
-        // The browser leg answers early (to run the Dial) — treat as "ringing",
-        // NOT connected. Real connect comes from the server legStatus below.
         c.on('onCallAnswered', () => { if (cancelled) return; setAllAudioMuted(true); setCall((x) => (x ? (x.state === 'connected' ? x : { ...x, state: 'ringing' }) : x)); });
         c.on('onCallTerminated', () => !cancelled && resetCall());
         c.on('onCallFailed', () => !cancelled && resetCall());
@@ -117,12 +117,11 @@ export function usePlivoBrowser(enabled) {
     const c = ref.current?.client;
     const digits = String(karigarPhone || '').replace(/[^0-9]/g, '');
     if (!c || status !== 'ready' || !digits) return false;
-    setMuted(false); setSpeakerOn(true); speakerRef.current = true;
+    setMuted(false); setVolume(1); volRef.current = 1;
     setDuration(0); setMicLevel(0); setMinimized(false); connectedRef.current = false;
     const callId = newCallId();
     callIdRef.current = callId;
     setCall({ state: 'dialing', label: vendor?.code || vendor?.name || digits });
-    // Live status from the server (accurate ringing / picked-up).
     stopDocSub();
     unsubDoc.current = onSnapshot(
       query(collection(db, 'doCalls'), where('clientCallId', '==', callId)),
@@ -160,20 +159,22 @@ export function usePlivoBrowser(enabled) {
     });
   }, []);
 
-  const toggleSpeaker = useCallback(() => {
-    setSpeakerOn((on) => {
-      const next = !on;
-      speakerRef.current = next;
-      setAllAudioMuted(!next);
+  const changeVolume = useCallback((delta) => {
+    setVolume((v) => {
+      const next = Math.min(1, Math.max(0, Math.round((v + delta) * 10) / 10));
+      volRef.current = next;
+      setAllAudioVolume(next);
       return next;
     });
   }, []);
+  const volumeUp = useCallback(() => changeVolume(0.2), [changeVolume]);
+  const volumeDown = useCallback(() => changeVolume(-0.2), [changeVolume]);
 
   const minimize = useCallback(() => setMinimized(true), []);
   const expand = useCallback(() => setMinimized(false), []);
 
   return {
-    status, call, muted, speakerOn, duration, micLevel, minimized, errorMsg,
-    placeCall, hangup, toggleMute, toggleSpeaker, minimize, expand,
+    status, call, muted, volume, duration, micLevel, minimized, errorMsg,
+    placeCall, hangup, toggleMute, volumeUp, volumeDown, minimize, expand,
   };
 }
