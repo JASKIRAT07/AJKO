@@ -524,9 +524,12 @@ exports.plivoBrowserToken = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] 
 
   // Each staff member gets their OWN Plivo endpoint so several can call at the
   // same time without login conflicts. Created on first use, then reused.
+  // IMPORTANT: keep the input username SHORT — Plivo appends a ~12-digit suffix,
+  // and a too-long final SIP username fails registration (401). Older accounts
+  // with a long `u<docid>` username (>28 chars) are re-created here.
   let endpointUsername = me.plivoEndpointUsername;
-  if (!endpointUsername) {
-    const username = (`u${me.id}`).replace(/[^A-Za-z0-9]/g, '').slice(0, 25);
+  if (!endpointUsername || endpointUsername.length > 28) {
+    const username = `ajko${Math.random().toString(36).slice(2, 8)}`; // short; Plivo makes it unique
     const password = crypto.randomBytes(12).toString('hex');
     const epRes = await fetch(`${plivoBase()}/Endpoint/`, {
       method: 'POST',
