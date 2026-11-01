@@ -424,6 +424,7 @@ exports.getDoCallRecording = onCall({ secrets: R2_SECRETS }, async (req) => {
 const BROWSER_ANSWER_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoBrowserAnswer';
 const DOCALL_HANGUP_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallHangup';
 const DOCALL_RECORDING_DONE_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallRecordingDone';
+const DOCALL_TRANSCRIPTION_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoDoCallTranscription';
 
 const plivoAuthHeader = () => `Basic ${Buffer.from(`${PLIVO_AUTH_ID.value()}:${PLIVO_AUTH_TOKEN.value()}`).toString('base64')}`;
 const plivoBase = () => `https://api.plivo.com/v1/Account/${PLIVO_AUTH_ID.value()}`;
@@ -559,14 +560,24 @@ exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOK
     });
   } catch (e) { logger.error('doCalls create failed', e); }
 
-  // Start recording the whole call (bridged conversation). Best-effort.
+  // Start recording the whole call (bridged conversation) + request a transcript.
+  // time_limit default is only 60s, so set it high. Best-effort.
   try {
     if (callUuid) {
-      await fetch(`${plivoBase()}/Call/${callUuid}/Record/`, {
+      const rec = await fetch(`${plivoBase()}/Call/${callUuid}/Record/`, {
         method: 'POST',
         headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_format: 'mp3', callback_url: DOCALL_RECORDING_DONE_URL, callback_method: 'POST' }),
+        body: JSON.stringify({
+          file_format: 'mp3',
+          time_limit: 3600,
+          callback_url: DOCALL_RECORDING_DONE_URL,
+          callback_method: 'POST',
+          transcription_type: 'auto',
+          transcription_url: DOCALL_TRANSCRIPTION_URL,
+          transcription_method: 'POST',
+        }),
       });
+      logger.info('start record → HTTP', rec.status);
     }
   } catch (e) { logger.error('start record failed', e); }
 
@@ -629,3 +640,24 @@ exports.plivoDoCallRecordingDone = onRequest(
     res.status(200).json({ ok: true });
   },
 );
+
+// ---- 13. DO-CALL TRANSCRIPTION (HTTP, public) ------------------------------
+// Plivo posts the transcription of a recording here → store it on the doCalls
+// row so it shows under the recording in the AJKO Recordings tab.
+exports.plivoDoCallTranscription = onRequest(async (req, res) => {
+  const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
+  const callUuid = String(p.CallUUID || p.call_uuid || '').trim();
+  // Plivo sends the transcript text under one of these keys.
+  const text = String(
+    p.transcription || p.transcription_text || p.transcript || p.text
+    || (p.transcription_data && (p.transcription_data.transcription || p.transcription_data.text)) || '',
+  ).trim();
+  logger.info('Plivo → DoCall transcription', { keys: Object.keys(p), callUuid, len: text.length });
+  try {
+    if (callUuid && text) {
+      const snap = await db.collection('doCalls').where('callUuid', '==', callUuid).limit(1).get();
+      if (!snap.empty) await snap.docs[0].ref.set({ transcript: text }, { merge: true });
+    }
+  } catch (e) { logger.error('transcription store failed', e); }
+  res.status(200).json({ ok: true });
+});

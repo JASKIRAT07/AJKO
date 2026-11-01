@@ -73,6 +73,13 @@ export async function markNotificationRead(id) {
   await updateDoc(doc(db, 'notifications', id), { isRead: true });
 }
 
+// Set (or clear) the default "main" vendor to call for a channel — shown first
+// with a golden badge in Do Calls so staff aren't confused which to ring.
+export async function setChannelDefaultVendor(channelId, vendorId) {
+  if (!channelId) return;
+  await updateDoc(doc(db, 'channels', channelId), { defaultVendorId: vendorId || null });
+}
+
 // Allocates a monotonic order number from counters/orders (never reused, never
 // decremented) and creates the order atomically. Returns { id, appOrderNo }.
 export async function createOrder(data) {

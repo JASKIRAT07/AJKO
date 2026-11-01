@@ -5,10 +5,11 @@ import { useAuth } from '../context/AuthContext';
 import { functions } from '../firebase';
 import { useUsers, useChannels, useDoCalls } from '../hooks/useCollections';
 import { usePlivoBrowser } from '../hooks/usePlivoBrowser';
+import { setChannelDefaultVendor } from '../utils/actions';
 import { toDate, formatDateTime } from '../utils/format';
 import BottomNav from '../components/BottomNav';
 import CallScreen from '../components/CallScreen';
-import { IcBell, IcSearch } from '../components/Icons';
+import { IcBell, IcSearch, IcPhoneOutgoing } from '../components/Icons';
 
 // Plays a call recording. Recordings live in a private R2 bucket, so we fetch a
 // short-lived signed URL (admin-only) on tap rather than storing a public link.
@@ -53,8 +54,8 @@ export default function DoCalls() {
   // Browser calling (staff talk through the app, no SIM). Logs in on the Do Calls
   // screen; placeCall() dials a karigar via WebRTC, masked behind the shop number.
   const {
-    status: callStatus, call, muted, speakerOn, duration, micLevel,
-    placeCall, hangup, toggleMute, toggleSpeaker,
+    status: callStatus, call, muted, speakerOn, duration, micLevel, minimized,
+    placeCall, hangup, toggleMute, toggleSpeaker, minimize, expand,
   } = usePlivoBrowser(isAdmin);
   const [callNote, setCallNote] = useState('');
 
@@ -114,10 +115,16 @@ export default function DoCalls() {
       ? channels
       : channels.filter((c) => c.id === channelFilter);
     return ordered
-      .map((c) => ({
-        channel: c,
-        members: vendors.filter((v) => v.channelId === c.id && match(v)),
-      }))
+      .map((c) => {
+        const members = vendors.filter((v) => v.channelId === c.id && match(v));
+        // Default "main" vendor first, then by code/name.
+        members.sort((a, b) => {
+          if (a.id === c.defaultVendorId) return -1;
+          if (b.id === c.defaultVendorId) return 1;
+          return `${a.code || a.name || ''}`.localeCompare(`${b.code || b.name || ''}`);
+        });
+        return { channel: c, members };
+      })
       .filter((g) => g.members.length > 0);
   }, [channels, vendors, channelFilter, search]);
 
@@ -185,17 +192,34 @@ export default function DoCalls() {
               groups.map((g) => (
                 <div key={g.channel.id} style={{ marginTop: 8 }}>
                   <div className="section-title" style={{ marginTop: 8 }}>{channelLabel(g.channel.id)}</div>
-                  {g.members.map((v) => (
-                    <div className="aic-row" key={v.id}>
-                      <div>
-                        <div className="nm">{v.code || v.name}</div>
-                        <div className="dt">{v.code && v.name && v.code !== v.name ? v.name : ''}</div>
+                  {g.members.map((v) => {
+                    const isDefault = g.channel.defaultVendorId === v.id;
+                    return (
+                      <div className="card card-tight" key={v.id}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, border: isDefault ? '1.5px solid #e6b800' : undefined }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 800 }}>{v.code || v.name}</span>
+                            {isDefault && (
+                              <span style={{ fontSize: 10, fontWeight: 800, color: '#7a5c00', background: 'linear-gradient(135deg,#ffe28a,#f5c518)', borderRadius: 999, padding: '2px 8px', letterSpacing: '.03em' }}>★ DEFAULT</span>
+                            )}
+                          </div>
+                          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                            {v.code && v.name && v.code !== v.name ? v.name : (v.phone || '')}
+                          </div>
+                        </div>
+                        {/* Admin: set/clear this vendor as the channel's default. */}
+                        <button className="icon-btn" title={isDefault ? 'Remove default' : 'Make default'}
+                          style={{ flexShrink: 0, color: isDefault ? '#e6b800' : 'var(--ink-faint)', fontSize: 18 }}
+                          onClick={() => setChannelDefaultVendor(g.channel.id, isDefault ? null : v.id).catch(() => {})}>
+                          {isDefault ? '★' : '☆'}
+                        </button>
+                        <button className="btn btn-primary" style={{ padding: '9px 18px', flexShrink: 0, gap: 6 }} disabled={!!call} onClick={() => onCall(v)}>
+                          <IcPhoneOutgoing size={16} /> Call
+                        </button>
                       </div>
-                      <div className="rgt">
-                        <button className="btn btn-primary" style={{ padding: '8px 16px' }} disabled={!!call} onClick={() => onCall(v)}>Call</button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))
             )}
@@ -269,9 +293,12 @@ export default function DoCalls() {
         micLevel={micLevel}
         muted={muted}
         speakerOn={speakerOn}
+        minimized={minimized}
         onMute={toggleMute}
         onSpeaker={toggleSpeaker}
         onEnd={hangup}
+        onMinimize={minimize}
+        onExpand={expand}
       />
 
       <BottomNav />
