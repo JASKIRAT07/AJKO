@@ -465,3 +465,35 @@ body { text-rendering: optimizeLegibility; }
 .aic-homeflag .t { font-size: 14px; font-weight: 800; color: #e05a4a; }
 .aic-homeflag .s { font-size: 12px; color: #8a5049; margin-top: 3px; line-height: 1.4; }
 .aic-homeflag .go { color: #e05a4a; font-size: 18px; }
+
+/* ===== Premium facelift (v55) — tasteful depth, no layout changes ===== */
+.btn { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; }
+.btn:active { transform: translateY(1px); }
+.btn-primary {
+  background: linear-gradient(135deg, #ff9163 0%, var(--primary) 52%, var(--primary-dark) 100%);
+  box-shadow: 0 10px 26px rgba(255,107,53,.42), inset 0 1px 0 rgba(255,255,255,.28);
+}
+.btn-primary:hover { filter: brightness(1.03); }
+.btn-primary:active { transform: translateY(1px) scale(.99); box-shadow: 0 6px 16px rgba(255,107,53,.4); }
+
+/* Stat tiles — subtle gradient, hairline border, soft depth, press feedback */
+.stat-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fcfbfa 100%);
+  border: 1px solid rgba(28,25,23,.05);
+  box-shadow: 0 1px 2px rgba(28,25,23,.04), 0 10px 24px rgba(28,25,23,.07);
+  transition: transform .14s ease, box-shadow .2s ease;
+}
+.stat-card:active { transform: scale(.97); }
+.stat-card .num { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+
+/* Cards & chips — a touch more depth and smoother interaction */
+.card { transition: box-shadow .2s ease, transform .14s ease; }
+.chip { transition: transform .12s ease, box-shadow .2s ease, background .15s ease; }
+.chip:active { transform: scale(.96); }
+
+/* Headings & brand */
+.topbar h1 { letter-spacing: -0.02em; }
+.section-title { letter-spacing: -0.01em; }
+
+/* Momentum scrolling (doesn't affect instant scroll-restore) */
+.screen { -webkit-overflow-scrolling: touch; }
