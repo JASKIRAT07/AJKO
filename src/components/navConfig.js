@@ -14,6 +14,7 @@ const NAVS = {
   ],
   team: [
     { to: '/', label: 'Home', icon: IcHome },
+    { to: '/do-calls', label: 'Do Calls', icon: IcPhoneOutgoing },
     { to: '/orders', label: 'Orders', icon: IcOrders },
     { to: '/conversations', label: 'Chat', icon: IcChannels },
     { to: '/profile', label: 'Profile', icon: IcProfile },

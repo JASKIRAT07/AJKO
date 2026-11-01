@@ -69,7 +69,7 @@ function Shell() {
         <Route path="/members" element={<RequireRole roles={['admin']}><Members /></RequireRole>} />
         <Route path="/ai-calls" element={<RequireRole roles={['admin']}><AICalls /></RequireRole>} />
         <Route path="/ai-calls/:callId" element={<RequireRole roles={['admin']}><AICallDetail /></RequireRole>} />
-        <Route path="/do-calls" element={<RequireRole roles={['admin']}><DoCalls /></RequireRole>} />
+        <Route path="/do-calls" element={<RequireRole roles={['admin', 'team']}><DoCalls /></RequireRole>} />
         <Route path="/settings" element={<RequireRole roles={['admin']}><Settings /></RequireRole>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

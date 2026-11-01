@@ -495,18 +495,39 @@ exports.plivoProvision = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] 
 // Mints a short-lived Plivo JWT so the browser SDK can register the endpoint
 // without ever seeing the endpoint password.
 exports.plivoBrowserToken = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, async (req) => {
-  await requireStaff(req);
+  const me = await requireStaff(req);
   const cfg = (await db.collection('config').doc('plivo').get()).data();
-  if (!cfg || !cfg.appId || !cfg.endpointUsername) {
+  if (!cfg || !cfg.appId) {
     throw new HttpsError('failed-precondition', 'Plivo not provisioned yet. Run plivoProvision.');
   }
+
+  // Each staff member gets their OWN Plivo endpoint so several can call at the
+  // same time without login conflicts. Created on first use, then reused.
+  let endpointUsername = me.plivoEndpointUsername;
+  if (!endpointUsername) {
+    const username = (`u${me.id}`).replace(/[^A-Za-z0-9]/g, '').slice(0, 25);
+    const password = crypto.randomBytes(12).toString('hex');
+    const epRes = await fetch(`${plivoBase()}/Endpoint/`, {
+      method: 'POST',
+      headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, alias: `AJKO-${(me.code || me.name || 'staff').replace(/[^A-Za-z0-9._@-]/g, '-')}`, app_id: cfg.appId }),
+    });
+    const epData = await epRes.json().catch(() => ({}));
+    if (!epRes.ok || !epData.username) {
+      logger.error('endpoint create failed', epData);
+      throw new HttpsError('internal', 'Could not set up your calling line.');
+    }
+    endpointUsername = epData.username;
+    await db.collection('users').doc(me.id).set({ plivoEndpointUsername: endpointUsername }, { merge: true });
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const tokRes = await fetch(`${plivoBase()}/JWT/Token/`, {
     method: 'POST',
     headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
     body: JSON.stringify({
       iss: PLIVO_AUTH_ID.value(),
-      sub: cfg.endpointUsername,
+      sub: endpointUsername,
       nbf: now,
       exp: now + 3600, // 1h
       per: { voice: { incoming_allow: false, outgoing_allow: true } },
@@ -518,7 +539,7 @@ exports.plivoBrowserToken = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] 
     logger.error('JWT token failed', data);
     throw new HttpsError('internal', 'Could not get browser token.');
   }
-  return { token: data.token, endpointUsername: cfg.endpointUsername };
+  return { token: data.token, endpointUsername };
 });
 
 // ---- 10. BROWSER ANSWER URL (HTTP, public) ---------------------------------

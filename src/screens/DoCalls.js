@@ -46,17 +46,18 @@ function fmtDur(sec) {
 
 export default function DoCalls() {
   const nav = useNavigate();
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, isTeam } = useAuth();
+  const canCall = isAdmin || isTeam; // admins + staff place calls
   const { data: users } = useUsers();
   const { data: channels } = useChannels(profile);
-  const { data: doCalls } = useDoCalls(isAdmin); // NEW separate collection; empty for now
+  const { data: doCalls } = useDoCalls(isAdmin); // recordings are admin-only
 
   // Browser calling (staff talk through the app, no SIM). Logs in on the Do Calls
   // screen; placeCall() dials a karigar via WebRTC, masked behind the shop number.
   const {
     status: callStatus, call, muted, speakerOn, duration, micLevel, minimized,
     placeCall, hangup, toggleMute, toggleSpeaker, minimize, expand,
-  } = usePlivoBrowser(isAdmin);
+  } = usePlivoBrowser(canCall);
   const [callNote, setCallNote] = useState('');
 
   const onCall = (vendor) => {
@@ -147,12 +148,15 @@ export default function DoCalls() {
       </div>
 
       <div className="screen screen-pad-bottom">
-        <div className="toggle" style={{ display: 'flex', width: '100%', marginBottom: 14 }}>
-          <button className={tab === 'calls' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('calls')}>Do Calls</button>
-          <button className={tab === 'recordings' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('recordings')}>Do Calls Recordings</button>
-        </div>
+        {/* Recordings are admin-only; staff see just the calling tab. */}
+        {isAdmin && (
+          <div className="toggle" style={{ display: 'flex', width: '100%', marginBottom: 14 }}>
+            <button className={tab === 'calls' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('calls')}>Do Calls</button>
+            <button className={tab === 'recordings' ? 'on' : ''} style={{ flex: 1 }} onClick={() => setTab('recordings')}>Do Calls Recordings</button>
+          </div>
+        )}
 
-        {tab === 'calls' ? (
+        {(tab === 'calls' || !isAdmin) ? (
           <>
             {/* Search vendors by name/code */}
             <div className="field" style={{ marginBottom: 10 }}>
@@ -209,11 +213,13 @@ export default function DoCalls() {
                           </div>
                         </div>
                         {/* Admin: set/clear this vendor as the channel's default. */}
-                        <button className="icon-btn" title={isDefault ? 'Remove default' : 'Make default'}
-                          style={{ flexShrink: 0, color: isDefault ? '#e6b800' : 'var(--ink-faint)', fontSize: 18 }}
-                          onClick={() => setChannelDefaultVendor(g.channel.id, isDefault ? null : v.id).catch(() => {})}>
-                          {isDefault ? '★' : '☆'}
-                        </button>
+                        {isAdmin && (
+                          <button className="icon-btn" title={isDefault ? 'Remove default' : 'Make default'}
+                            style={{ flexShrink: 0, color: isDefault ? '#e6b800' : 'var(--ink-faint)', fontSize: 18 }}
+                            onClick={() => setChannelDefaultVendor(g.channel.id, isDefault ? null : v.id).catch(() => {})}>
+                            {isDefault ? '★' : '☆'}
+                          </button>
+                        )}
                         <button className="btn btn-primary" style={{ padding: '9px 18px', flexShrink: 0, gap: 6 }} disabled={!!call} onClick={() => onCall(v)}>
                           <IcPhoneOutgoing size={16} /> Call
                         </button>
