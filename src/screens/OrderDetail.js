@@ -75,7 +75,7 @@ export default function OrderDetail() {
         <h1 style={{ fontSize: 17 }}>{order.appOrderNo}</h1>
       </div>
 
-      <div className="screen" style={{ paddingBottom: 100 }}>
+      <div className="screen detail-morph" style={{ paddingBottom: 100 }}>
         {order.images?.length > 0 && <MediaStrip media={order.images} single={order.images.length === 1} />}
 
         {order.videos?.length > 0 && (

@@ -667,3 +667,11 @@ body::before {
 
 /* Lightbox loading spinner (so the viewer is never a blank black screen). */
 .lightbox-spin { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 105; }
+
+/* ---- Details "morph open" — the card expands into the detail view -------- */
+.detail-morph { animation: detailMorphIn .42s cubic-bezier(.2,.8,.2,1); transform-origin: 50% 8%; }
+@keyframes detailMorphIn {
+  from { opacity: 0; transform: translateY(14px) scale(.965); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .detail-morph { animation: none; } }
