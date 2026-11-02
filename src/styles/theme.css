@@ -675,3 +675,12 @@ body::before {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 @media (prefers-reduced-motion: reduce) { .detail-morph { animation: none; } }
+
+/* ---- In-button spinner (e.g. "Preparing…" while a share is built) ------- */
+.btn-spin {
+  width: 16px; height: 16px; flex: 0 0 auto;
+  border: 2px solid rgba(255,255,255,.55); border-top-color: #fff;
+  border-radius: 50%; animation: spin .7s linear infinite;
+}
+/* Keep action-button labels on one line and inside the card. */
+.card-order .btn-primary, .card-order .btn-wa { white-space: nowrap; overflow: hidden; }

@@ -69,6 +69,16 @@ function OrderCard({ order, channelCode, createdByName, inFeed }) {
 
   const go = () => nav(`/order/${order.id}`);
 
+  // Sharing pre-fetches the order's images/voice note into files, which can take
+  // a few seconds — show a spinner on the button so the tap isn't a dead wait.
+  const [sharing, setSharing] = useState(false);
+  const onShare = async (e) => {
+    e.stopPropagation();
+    if (sharing) return;
+    setSharing(true);
+    try { await shareOrder(order); } finally { setSharing(false); }
+  };
+
   return (
     <div className={`card card-order ${glow}`} style={{ marginBottom: 10 }}>
       {/* Line 1: AJKO order number · View details (centre) · status badge */}
@@ -128,13 +138,14 @@ function OrderCard({ order, channelCode, createdByName, inFeed }) {
               onClick={(e) => { e.stopPropagation(); setStage(order, danger.to, profile); }}>{danger.label}</button>
           )}
           {primary && (
-            <button className="btn btn-primary" style={{ flex: 1 }}
+            <button className="btn btn-primary" style={{ flex: 1, minWidth: 0 }}
               onClick={(e) => { e.stopPropagation(); setStage(order, primary.to, profile); }}>{primary.label}</button>
           )}
           {canShare && (
-            <button className="btn btn-wa" style={{ flex: 1.4 }}
-              onClick={(e) => { e.stopPropagation(); shareOrder(order); }}>
-              <IcWhatsApp size={18} /> Share
+            <button className="btn btn-wa" style={{ flex: 1.4, minWidth: 0 }} disabled={sharing} onClick={onShare}>
+              {sharing
+                ? <><span className="btn-spin" /> Preparing…</>
+                : <><IcWhatsApp size={18} /> Share</>}
             </button>
           )}
         </div>
