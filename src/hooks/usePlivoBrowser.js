@@ -9,9 +9,6 @@ import { httpsCallable } from 'firebase/functions';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { functions, db } from '../firebase';
 
-function setAllAudioMuted(muted) {
-  try { document.querySelectorAll('audio').forEach((el) => { el.muted = muted; }); } catch (e) { /* noop */ }
-}
 function setAllAudioVolume(v) {
   try { document.querySelectorAll('audio').forEach((el) => { el.muted = false; el.volume = v; }); } catch (e) { /* noop */ }
 }
@@ -85,9 +82,12 @@ export function usePlivoBrowser(enabled) {
           try { msg = `${msg}: ${c.getErrorStringByErrorCodes(code)}`; } catch (e) { /* noop */ }
           setErrorMsg(msg); setStatus('error');
         });
-        c.on('onCalling', () => { if (cancelled) return; setAllAudioMuted(true); setCall((x) => (x ? { ...x, state: 'dialing' } : x)); });
-        c.on('onCallRemoteRinging', () => { if (cancelled) return; setAllAudioMuted(true); setCall((x) => (x ? (x.state === 'connected' ? x : { ...x, state: 'ringing' }) : x)); });
-        c.on('onCallAnswered', () => { if (cancelled) return; setAllAudioMuted(true); setCall((x) => (x ? (x.state === 'connected' ? x : { ...x, state: 'ringing' }) : x)); });
+        // NOTE: do NOT mute audio here — the SDK manages the ringback and the
+        // live call audio in the same elements, and muting could silence the
+        // call. We only touch audio for the volume control once connected.
+        c.on('onCalling', () => { if (cancelled) return; setCall((x) => (x ? { ...x, state: 'dialing' } : x)); });
+        c.on('onCallRemoteRinging', () => { if (cancelled) return; setCall((x) => (x ? (x.state === 'connected' ? x : { ...x, state: 'ringing' }) : x)); });
+        c.on('onCallAnswered', () => { if (cancelled) return; setCall((x) => (x ? (x.state === 'connected' ? x : { ...x, state: 'ringing' }) : x)); });
         c.on('onCallTerminated', () => !cancelled && resetCall());
         c.on('onCallFailed', () => !cancelled && resetCall());
         c.on('volume', (stats) => {
