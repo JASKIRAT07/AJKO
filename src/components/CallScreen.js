@@ -1,7 +1,7 @@
 // In-call UI for Do Calls — a WhatsApp-style call screen (dialing/ringing/
-// connected) with mute, live mic meter, speaker toggle, duration, minimize, and
-// end. Minimizing collapses it to a slim top header; tapping the header reopens
-// the full screen. Removed entirely when the call ends.
+// connected) with mute, live mic meter, duration, minimize, and end. Output
+// volume is left to the phone's own volume keys. Minimizing collapses it to a
+// slim top header; tapping the header reopens. Removed when the call ends.
 import { IcPhone } from './Icons';
 
 function initials(name) {
@@ -15,8 +15,8 @@ function fmt(sec) {
 }
 
 export default function CallScreen({
-  call, duration, micLevel, muted, volume, minimized,
-  onMute, onVolumeUp, onVolumeDown, onEnd, onMinimize, onExpand,
+  call, duration, micLevel, muted, minimized,
+  onMute, onEnd, onMinimize, onExpand,
 }) {
   if (!call) return null;
   const connected = call.state === 'connected';
@@ -98,28 +98,20 @@ export default function CallScreen({
         )}
       </div>
 
-      {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 28 }}>
+      {/* Controls — Mute + End. Output volume is the phone's own volume keys. */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 56 }}>
         <div style={{ textAlign: 'center' }}>
-          <button className={`cs-btn ${muted ? 'on' : ''}`} onClick={onMute} aria-label="Mute mic">
-            <span style={{ fontSize: 24 }}>{muted ? '🔇' : '🎤'}</span>
+          <button className={`cs-btn ${muted ? 'on' : ''}`} onClick={onMute} aria-label={muted ? 'Unmute mic' : 'Mute mic'}>
+            <span style={{ fontSize: 26 }}>{muted ? '🔇' : '🎤'}</span>
           </button>
-          <div style={{ fontSize: 11, marginTop: 7, color: '#cfeede' }}>{muted ? 'Unmute' : 'Mute'}</div>
-        </div>
-
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button className="cs-btn" style={{ width: 50, height: 50, fontSize: 26 }} onClick={onVolumeDown} aria-label="Volume down">−</button>
-            <button className="cs-btn" style={{ width: 50, height: 50, fontSize: 24 }} onClick={onVolumeUp} aria-label="Volume up">+</button>
-          </div>
-          <div style={{ fontSize: 11, marginTop: 7, color: '#cfeede' }}>🔊 Volume {Math.round((volume == null ? 1 : volume) * 100)}%</div>
+          <div style={{ fontSize: 12, marginTop: 8, color: '#cfeede' }}>{muted ? 'Unmute' : 'Mute'}</div>
         </div>
 
         <div style={{ textAlign: 'center' }}>
           <button className="cs-end" onClick={onEnd} aria-label="End call" style={{ transform: 'rotate(135deg)' }}>
             <IcPhone size={27} />
           </button>
-          <div style={{ fontSize: 11, marginTop: 7, color: '#cfeede' }}>End</div>
+          <div style={{ fontSize: 12, marginTop: 8, color: '#cfeede' }}>End</div>
         </div>
       </div>
     </div>

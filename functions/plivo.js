@@ -384,15 +384,61 @@ exports.r2IngestRecording = onRequest(
 // a short-lived signed URL the <audio> player can load. Admin-only: recordings
 // are private and must never be a public link.
 // ============================================================================
-exports.getDoCallRecording = onCall({ secrets: R2_SECRETS }, async (req) => {
+exports.getDoCallRecording = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN, ...R2_SECRETS] }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
   // Verify the caller is an admin (recordings are sensitive).
   const snap = await db.collection('users').where('authUid', '==', req.auth.uid).limit(1).get();
   if (snap.empty || snap.docs[0].data().role !== 'admin') {
     throw new HttpsError('permission-denied', 'Admins only.');
   }
-  const recordingKey = String(req.data && req.data.recordingKey || '').trim();
-  if (!recordingKey) throw new HttpsError('invalid-argument', 'Missing recordingKey.');
+
+  const data = req.data || {};
+  const docId = String(data.docId || '').trim();
+  let recordingKey = String(data.recordingKey || '').trim();
+  let callUuid = String(data.callUuid || '').trim();
+  let recordingId = String(data.recordingId || '').trim();
+
+  // Prefer reading the identifiers straight off the call record (keeps them
+  // server-side and lets old rows that only have a callUuid still work).
+  let docRef = null;
+  if (docId) {
+    docRef = db.collection('doCalls').doc(docId);
+    const d = await docRef.get();
+    if (d.exists) {
+      const dd = d.data();
+      recordingKey = recordingKey || dd.recordingKey || '';
+      callUuid = callUuid || dd.callUuid || '';
+      recordingId = recordingId || dd.recordingId || '';
+    }
+  }
+
+  // Not in R2 yet → fetch the file from Plivo's API (by recording_id, then by
+  // call_uuid), upload to R2, and remember the key so next time is instant.
+  if (!recordingKey) {
+    if (!recordingId && !callUuid) throw new HttpsError('invalid-argument', 'No recording reference on this call.');
+    let recordUrl = '';
+    try {
+      if (recordingId) {
+        const r = await fetch(`${plivoBase()}/Recording/${recordingId}/`, { headers: { Authorization: plivoAuthHeader() } });
+        const j = await r.json().catch(() => ({}));
+        recordUrl = (j && (j.recording_url || j.record_url)) || '';
+        callUuid = callUuid || (j && j.call_uuid) || '';
+      }
+      if (!recordUrl && callUuid) {
+        const r = await fetch(`${plivoBase()}/Recording/?call_uuid=${encodeURIComponent(callUuid)}&limit=1`, { headers: { Authorization: plivoAuthHeader() } });
+        const j = await r.json().catch(() => ({}));
+        const obj = j && Array.isArray(j.objects) && j.objects[0];
+        if (obj) { recordUrl = obj.recording_url || ''; recordingId = recordingId || obj.recording_id || ''; }
+      }
+    } catch (e) { logger.error('plivo recording lookup failed', e); }
+
+    if (!recordUrl) throw new HttpsError('not-found', 'Recording not ready yet — try again in a minute.');
+    const key = `recordings/${callUuid || recordingId}.mp3`;
+    await ingestRecordingToR2(recordUrl, key);
+    recordingKey = key;
+    if (docRef) { try { await docRef.set({ recordingKey, recordingId: recordingId || null }, { merge: true }); } catch (e) { /* noop */ } }
+    logger.info('recording materialized on demand', { callUuid, recordingId, key });
+  }
 
   const url = await getSignedUrl(
     r2Client(),
@@ -598,16 +644,21 @@ exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOK
     }
   } catch (e) { logger.warn('vendor lookup failed', e); }
 
-  // Record the doCalls row (keyed by callUuid so later webhooks can find it).
+  // Record the doCalls row (keyed by callUuid so later webhooks + the Recordings
+  // tab can find it). Keep the ref so we can attach the recording id below.
+  let docRef = null;
   try {
-    await db.collection('doCalls').add({
+    docRef = await db.collection('doCalls').add({
       callUuid, clientCallId, vendorId, vendorCode, vendorName, karigar, channelId,
       at: admin.firestore.FieldValue.serverTimestamp(), status: 'in-progress', legStatus: 'dialing', source: 'browser',
     });
   } catch (e) { logger.error('doCalls create failed', e); }
 
   // Start recording the whole call (bridged conversation) + request a transcript.
-  // time_limit default is only 60s, so set it high. Best-effort.
+  // time_limit default is only 60s, so set it high. We also capture the returned
+  // recording_id and store it on the row: the async recording callback has proven
+  // unreliable, so the Recordings tab fetches the file straight from Plivo's API
+  // on demand (by recording_id, falling back to call_uuid) — see getDoCallRecording.
   try {
     if (callUuid) {
       const rec = await fetch(`${plivoBase()}/Call/${callUuid}/Record/`, {
@@ -623,7 +674,12 @@ exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOK
           transcription_method: 'POST',
         }),
       });
-      logger.info('start record → HTTP', rec.status);
+      const recData = await rec.json().catch(() => ({}));
+      const recordingId = (recData && (recData.recording_id || recData.recordingId)) || null;
+      logger.info('start record → HTTP', { status: rec.status, recordingId });
+      if (recordingId && docRef) {
+        try { await docRef.set({ recordingId }, { merge: true }); } catch (e) { /* noop */ }
+      }
     }
   } catch (e) { logger.error('start record failed', e); }
 

@@ -15,22 +15,30 @@ import { IcBell, IcSearch, IcPhoneOutgoing } from '../components/Icons';
 // short-lived signed URL (admin-only) on tap rather than storing a public link.
 function RecordingPlayer({ call }) {
   const [url, setUrl] = useState(call.recordingUrl || null);
-  const [state, setState] = useState(call.recordingUrl ? 'ready' : 'idle'); // idle|loading|ready|error
+  const [state, setState] = useState(call.recordingUrl ? 'ready' : 'idle'); // idle|loading|ready|notready|error
+  // A recording exists for any browser call — the file is pulled from Plivo on
+  // demand using the row's recordingKey / recordingId / callUuid.
+  const canLoad = call.recordingKey || call.recordingId || call.callUuid || call.recordingUrl;
   const load = async () => {
     if (url || state === 'loading') return;
     setState('loading');
     try {
-      const { data } = await httpsCallable(functions, 'getDoCallRecording')({ recordingKey: call.recordingKey });
+      const { data } = await httpsCallable(functions, 'getDoCallRecording')({ docId: call.id });
       if (data && data.url) { setUrl(data.url); setState('ready'); } else setState('error');
-    } catch (e) { setState('error'); }
+    } catch (e) {
+      setState((e && e.code === 'functions/not-found') ? 'notready' : 'error');
+    }
   };
-  if (!call.recordingKey && !call.recordingUrl) {
+  if (!canLoad) {
     return <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>No recording available.</div>;
   }
   if (url) return <audio src={url} controls preload="none" style={{ width: '100%', height: 40, marginTop: 10 }} />;
   return (
     <button className="btn btn-ghost btn-block" style={{ marginTop: 10 }} onClick={load} disabled={state === 'loading'}>
-      {state === 'loading' ? 'Loading…' : state === 'error' ? 'Couldn’t load — tap to retry' : '▶ Load recording'}
+      {state === 'loading' ? 'Loading…'
+        : state === 'notready' ? 'Not ready yet — tap to retry'
+          : state === 'error' ? 'Couldn’t load — tap to retry'
+            : '▶ Load recording'}
     </button>
   );
 }
@@ -55,8 +63,8 @@ export default function DoCalls() {
   // Browser calling (staff talk through the app, no SIM). Logs in on the Do Calls
   // screen; placeCall() dials a karigar via WebRTC, masked behind the shop number.
   const {
-    status: callStatus, call, muted, volume, duration, micLevel, minimized, errorMsg,
-    placeCall, hangup, toggleMute, volumeUp, volumeDown, minimize, expand,
+    status: callStatus, call, muted, duration, micLevel, minimized, errorMsg,
+    placeCall, hangup, toggleMute, minimize, expand,
   } = usePlivoBrowser(canCall);
   const [callNote, setCallNote] = useState('');
 
@@ -301,11 +309,8 @@ export default function DoCalls() {
         duration={duration}
         micLevel={micLevel}
         muted={muted}
-        volume={volume}
         minimized={minimized}
         onMute={toggleMute}
-        onVolumeUp={volumeUp}
-        onVolumeDown={volumeDown}
         onEnd={hangup}
         onMinimize={minimize}
         onExpand={expand}

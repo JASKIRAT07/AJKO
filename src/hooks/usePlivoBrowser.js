@@ -2,16 +2,14 @@
 // Staff browser registers as a Plivo endpoint (JWT) and places masked WebRTC
 // calls. Live state: dialing → ringing → connected (driven by the server's
 // per-call legStatus so "Ringing / Picked up" are accurate). Controls: mute
-// (mic), volume −/+ (output), live mic level, duration, minimize. Mic only
-// acquired during a call (permOnClick).
+// (mic), live mic level, duration, minimize. Mic only acquired during a call
+// (permOnClick). We never touch the SDK's <audio> elements — doing so previously
+// muted the live call; output volume is left to the OS/phone volume keys.
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { functions, db } from '../firebase';
 
-function setAllAudioVolume(v) {
-  try { document.querySelectorAll('audio').forEach((el) => { el.muted = false; el.volume = v; }); } catch (e) { /* noop */ }
-}
 function newCallId() {
   const u = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : '';
   return (u || `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9]/g, '');
@@ -22,7 +20,6 @@ export function usePlivoBrowser(enabled) {
   const [status, setStatus] = useState('idle'); // idle|connecting|ready|error|unprovisioned
   const [call, setCall] = useState(null);        // { state, label }
   const [muted, setMuted] = useState(false);
-  const [volume, setVolume] = useState(1);       // 0..1 output volume
   const [duration, setDuration] = useState(0);
   const [micLevel, setMicLevel] = useState(0);
   const [minimized, setMinimized] = useState(false);
@@ -32,7 +29,7 @@ export function usePlivoBrowser(enabled) {
   const durTimer = useRef(null);
   const meterTimer = useRef(null);
   const micRaw = useRef(0);
-  const volRef = useRef(1);
+  const mutedRef = useRef(false);
   const callIdRef = useRef(null);
   const unsubDoc = useRef(null);
   const connectedRef = useRef(false);
@@ -44,7 +41,7 @@ export function usePlivoBrowser(enabled) {
   const stopDocSub = () => { if (unsubDoc.current) { try { unsubDoc.current(); } catch (e) { /* noop */ } unsubDoc.current = null; } };
   const resetCall = () => {
     clearTimers(); stopDocSub();
-    setCall(null); setMuted(false); setVolume(1); volRef.current = 1;
+    setCall(null); setMuted(false); mutedRef.current = false;
     setDuration(0); setMicLevel(0); setMinimized(false); micRaw.current = 0;
     connectedRef.current = false; callIdRef.current = null;
   };
@@ -52,7 +49,8 @@ export function usePlivoBrowser(enabled) {
   const markConnected = () => {
     if (connectedRef.current) return;
     connectedRef.current = true;
-    setAllAudioVolume(volRef.current); // unmute + apply chosen volume
+    // Re-assert mute if the staff tapped it before the karigar picked up.
+    try { if (mutedRef.current) ref.current?.client?.mute(); } catch (e) { /* noop */ }
     setCall((x) => (x ? { ...x, state: 'connected' } : x));
     startRef.current = Date.now();
     setDuration(0);
@@ -117,7 +115,7 @@ export function usePlivoBrowser(enabled) {
     const c = ref.current?.client;
     const digits = String(karigarPhone || '').replace(/[^0-9]/g, '');
     if (!c || status !== 'ready' || !digits) return false;
-    setMuted(false); setVolume(1); volRef.current = 1;
+    setMuted(false); mutedRef.current = false;
     setDuration(0); setMicLevel(0); setMinimized(false); connectedRef.current = false;
     const callId = newCallId();
     callIdRef.current = callId;
@@ -154,27 +152,18 @@ export function usePlivoBrowser(enabled) {
     const c = ref.current?.client;
     if (!c) return;
     setMuted((m) => {
-      try { if (m) c.unmute(); else c.mute(); } catch (e) { /* noop */ }
-      return !m;
-    });
-  }, []);
-
-  const changeVolume = useCallback((delta) => {
-    setVolume((v) => {
-      const next = Math.min(1, Math.max(0, Math.round((v + delta) * 10) / 10));
-      volRef.current = next;
-      setAllAudioVolume(next);
+      const next = !m;
+      mutedRef.current = next;
+      try { if (next) c.mute(); else c.unmute(); } catch (e) { /* noop */ }
       return next;
     });
   }, []);
-  const volumeUp = useCallback(() => changeVolume(0.2), [changeVolume]);
-  const volumeDown = useCallback(() => changeVolume(-0.2), [changeVolume]);
 
   const minimize = useCallback(() => setMinimized(true), []);
   const expand = useCallback(() => setMinimized(false), []);
 
   return {
-    status, call, muted, volume, duration, micLevel, minimized, errorMsg,
-    placeCall, hangup, toggleMute, volumeUp, volumeDown, minimize, expand,
+    status, call, muted, duration, micLevel, minimized, errorMsg,
+    placeCall, hangup, toggleMute, minimize, expand,
   };
 }
