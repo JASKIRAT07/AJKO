@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 // Fullscreen image with pinch / double-tap zoom + pan. Lightweight (no library):
 // touch handles pinch & pan; double-tap (and double-click) toggle zoom; mouse
@@ -73,6 +73,18 @@ function ZoomableImage({ src, alt }) {
 
 export default function MediaStrip({ media = [], single }) {
   const [lightbox, setLightbox] = useState(null); // {url, isVideo}
+  const close = () => setLightbox(null);
+
+  // While the viewer is open: close on Escape and lock background scroll.
+  useEffect(() => {
+    if (!lightbox) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [lightbox]);
+
   if (!media || media.length === 0) return null;
 
   const open = (e, item) => { e.stopPropagation(); setLightbox(item); };
@@ -90,11 +102,25 @@ export default function MediaStrip({ media = [], single }) {
       </div>
 
       {lightbox && (
-        <div className="lightbox" onClick={() => setLightbox(null)}>
-          <button className="lightbox-close" aria-label="Close">✕</button>
-          {lightbox.isVideo
-            ? <video src={lightbox.url} controls autoPlay playsInline onClick={(e) => e.stopPropagation()} />
-            : <ZoomableImage src={lightbox.url} alt="full size" />}
+        <div className="lightbox" onClick={close} role="dialog" aria-modal="true">
+          {/* Big, always-working close button. Explicit handler (does not rely on
+              bubbling) + high z-index so taps always land on it. */}
+          <button
+            type="button"
+            className="lightbox-close"
+            aria-label="Close"
+            onClick={(e) => { e.stopPropagation(); close(); }}
+          >
+            ✕
+          </button>
+          {/* Tapping the media itself should NOT close (so you can zoom); only the
+              dark backdrop and the ✕ close. */}
+          <div className="lightbox-body" onClick={(e) => e.stopPropagation()}>
+            {lightbox.isVideo
+              ? <video src={lightbox.url} controls autoPlay playsInline />
+              : <ZoomableImage src={lightbox.url} alt="full size" />}
+          </div>
+          <div className="lightbox-hint">Tap ✕ or outside the image to close</div>
         </div>
       )}
     </>

@@ -117,6 +117,12 @@ function OrderCard({ order, channelCode, createdByName, inFeed }) {
         );
       })()}
 
+      {/* Deliberate, obvious way into the full order — the whole card is still
+          tappable, but this makes "where do I click for details" unmistakable. */}
+      <button type="button" className="btn btn-details btn-block" style={{ marginTop: 12 }} onClick={go}>
+        View details →
+      </button>
+
       {createdByName && (
         <div className="faint" style={{ fontSize: 11, marginTop: 8 }}>
           Created by {createdByName} · {formatDateTime(order.createdAt)}
