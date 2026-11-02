@@ -17,7 +17,7 @@ import AICalls from './screens/AICalls';
 import AICallDetail from './screens/AICallDetail';
 import DoCalls from './screens/DoCalls';
 import Sidebar from './components/Sidebar';
-import Splash from './components/Splash';
+import BootScreen from './components/BootScreen';
 import ScrollManager from './components/ScrollManager';
 import Loader from './components/Loader';
 import Watch from './screens/Watch';
@@ -89,13 +89,25 @@ function SignOutLink() {
   return <button className="btn btn-ghost" style={{ marginTop: 16 }} onClick={logout}>Sign out</button>;
 }
 
-export default function App() {
-  const [splash, setSplash] = useState(true);
+// The branded opening: BootScreen holds for a beat, then tilts away (`leaving`)
+// while the app fades up beneath it (the reveal). App data mounts immediately
+// behind the boot screen, so nothing is actually delayed.
+function Booted() {
+  const [phase, setPhase] = useState('boot'); // 'boot' | 'leaving' | 'done'
   useEffect(() => {
-    const t = setTimeout(() => setSplash(false), 2200);
-    return () => clearTimeout(t);
+    const t1 = setTimeout(() => setPhase('leaving'), 2000);
+    const t2 = setTimeout(() => setPhase('done'), 2750);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
+  return (
+    <>
+      <div className={`app-reveal ${phase === 'boot' ? 'pre' : 'in'}`}><Shell /></div>
+      {phase !== 'done' && <BootScreen leaving={phase === 'leaving'} />}
+    </>
+  );
+}
 
+export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
@@ -103,7 +115,7 @@ export default function App() {
         <Routes>
           {/* Public branded video watch page — no login (shared with karigars). */}
           <Route path="/watch/:orderId" element={<Watch />} />
-          <Route path="*" element={splash ? <Splash /> : <Shell />} />
+          <Route path="*" element={<Booted />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

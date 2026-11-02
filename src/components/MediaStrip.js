@@ -1,16 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
 
-// Fullscreen image with pinch / double-tap zoom + pan. Lightweight (no library):
-// touch handles pinch & pan; double-tap (and double-click) toggle zoom; mouse
-// drag pans when zoomed; wheel zooms on desktop. touch-action:none so the
-// browser doesn't hijack the gesture. Only the viewer gains zoom — nothing about
-// upload/storage/thumbnails/sharing changes.
+// Fullscreen image with double-tap / double-click + pinch zoom and pan.
+// At rest (scale 1) the image carries NO transform and NO will-change, so it is
+// a plain, always-painted element — this avoids the iOS/Safari bug where a
+// persistently composited <img> only repaints while it is being touched (the
+// "blank until you press and hold" symptom). A GPU layer is created only while
+// actually zoomed. A spinner shows until the full image loads, so it is never a
+// blank black screen. Nothing about upload/storage/thumbnails/sharing changes.
 function ZoomableImage({ src, alt }) {
+  const [loaded, setLoaded] = useState(false);
   const [t, setT] = useState({ scale: 1, x: 0, y: 0 });
   const g = useRef({});
   const mouse = useRef(null);
   const lastTap = useRef(0);
   const stop = (e) => e.stopPropagation();
+  const zoomed = t.scale > 1;
 
   const dist = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
   const toggle = () => setT((p) => (p.scale > 1 ? { scale: 1, x: 0, y: 0 } : { scale: 2.5, x: 0, y: 0 }));
@@ -44,30 +48,39 @@ function ZoomableImage({ src, alt }) {
   const onMouseUp = () => { mouse.current = null; };
 
   return (
-    <img
-      src={src}
-      alt={alt}
-      onClick={stop}
-      onDoubleClick={(e) => { stop(e); toggle(); }}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onWheel={onWheel}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-      style={{
-        touchAction: 'none',
-        transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})`,
-        transition: g.current.mode || mouse.current ? 'none' : 'transform .18s ease',
-        cursor: t.scale > 1 ? 'grab' : 'zoom-in',
-        maxWidth: '100%',
-        maxHeight: '100%',
-        borderRadius: 12,
-        willChange: 'transform',
-      }}
-    />
+    <>
+      {!loaded && <div className="lightbox-spin"><div className="spinner" /></div>}
+      <img
+        src={src}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        onClick={stop}
+        onDoubleClick={(e) => { stop(e); toggle(); }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        style={{
+          // Only capture the gesture while zoomed; otherwise behave like a normal image.
+          touchAction: zoomed ? 'none' : 'auto',
+          // No transform / no layer promotion at rest → the image always paints on iOS.
+          transform: zoomed ? `translate(${t.x}px, ${t.y}px) scale(${t.scale})` : 'none',
+          transition: (g.current.mode || mouse.current) ? 'none' : 'transform .18s ease',
+          willChange: zoomed ? 'transform' : 'auto',
+          cursor: zoomed ? 'grab' : 'zoom-in',
+          display: 'block',
+          maxWidth: '100%',
+          maxHeight: '86vh',
+          objectFit: 'contain',
+          borderRadius: 12,
+          opacity: loaded ? 1 : 0,
+        }}
+      />
+    </>
   );
 }
 

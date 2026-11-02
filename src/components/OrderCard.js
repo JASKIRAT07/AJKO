@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  stageInfo, countdownLabel, formatDateTime, allowedTransitions, typeLabel,
+  stageInfo, formatDateTime, allowedTransitions,
 } from '../utils/format';
 import { setStage } from '../utils/actions';
 import { shareOrder } from '../utils/share';
@@ -44,7 +44,7 @@ function VideoThumb({ uid, onOpen }) {
   const url = base ? `${base}?width=400&height=400&fit=crop` : null; // small, not full-res
   const processing = inView && !failed && (!pb || !pb.ready);
   return (
-    <div ref={ref} onClick={onOpen} style={{ position: 'relative', width: 150, height: 150, minWidth: 150, flexShrink: 0, borderRadius: 14, overflow: 'hidden', background: '#111', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+    <div ref={ref} onClick={onOpen} style={{ position: 'relative', width: 120, height: 120, minWidth: 120, flexShrink: 0, borderRadius: 14, overflow: 'hidden', background: '#111', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
       {url
         ? <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         : <div style={{ color: '#fff', opacity: 0.75, fontSize: 12, textAlign: 'center', padding: 6 }}>{processing ? '🎥 Processing…' : '🎥 Video'}</div>}
@@ -70,44 +70,41 @@ function OrderCard({ order, channelCode, createdByName, inFeed }) {
   const go = () => nav(`/order/${order.id}`);
 
   return (
-    <div className={`card ${glow}`} style={{ marginBottom: 12 }}>
-      <div className="row-between" onClick={go} style={{ cursor: 'pointer' }}>
-        <div>
-          <div className="order-no">{order.appOrderNo}</div>
-          <div className="faint" style={{ fontSize: 12, marginTop: 1 }}>Store #{order.storeOrderNo}</div>
+    <div className={`card card-order ${glow}`} style={{ marginBottom: 10 }}>
+      {/* Line 1: AJKO order number · View details (centre) · status badge */}
+      <div className="oc-top">
+        <div className="order-no" onClick={go} style={{ cursor: 'pointer' }}>{order.appOrderNo}</div>
+        <button type="button" className="btn btn-details btn-details-sm" onClick={go}>View&nbsp;details&nbsp;→</button>
+        <div className="oc-badge"><UrgencyBadge urgency={urg} /></div>
+      </div>
+
+      {/* Line 2: store number (bold) + the basic order info */}
+      <div onClick={go} style={{ cursor: 'pointer', marginTop: 9 }}>
+        <div className="store-no">Store #{order.storeOrderNo}</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 5, flexWrap: 'wrap' }}>
+          {channelCode && <span className="chip spec-chip" style={{ fontWeight: 700 }}>💬 {channelCode}</span>}
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{order.itemName}</span>
+          {order.edited && <EditedBadge />}
         </div>
-        <UrgencyBadge urgency={urg} />
       </div>
 
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }} onClick={go}>
-        {channelCode && <span className="chip spec-chip" style={{ fontWeight: 700 }}>💬 {channelCode}</span>}
-        <span style={{ fontWeight: 700, fontSize: 16 }}>{order.itemName}</span>
-        {order.edited && <EditedBadge />}
-      </div>
-
+      {/* The image — the heart of the card (compact tile) */}
       {order.images?.length > 0 && (
-        <div style={{ marginTop: 10 }}>
+        <div className="oc-media" style={{ marginTop: 10 }}>
           <MediaStrip media={order.images} />
         </div>
       )}
 
       {order.videos?.length > 0 && (
-        <div className="media-strip" style={{ marginTop: 10 }}>
-          {order.videos.map((v) => <VideoThumb key={v.uid} uid={v.uid} onOpen={go} />)}
+        <div className="oc-media" style={{ marginTop: 10 }}>
+          <div className="media-strip">
+            {order.videos.map((v) => <VideoThumb key={v.uid} uid={v.uid} onOpen={go} />)}
+          </div>
         </div>
       )}
 
-      <div className="pill-row" style={{ marginTop: 10 }} onClick={go}>
-        {order.weight && <span className="chip spec-chip">⚠️ Max {order.weight} gms</span>}
-        {order.purity && <span className="chip spec-chip">✨ {order.purity}</span>}
-        {order.look && <span className="chip spec-chip">🎨 {order.look}</span>}
-        {order.type && <span className="chip spec-chip">🏷️ {typeLabel(order.type)}</span>}
-        {order.dueDate && <span className="chip spec-chip">📅 {countdownLabel(order.dueDate)}</span>}
-        {/* Indicator only — the audio file is NOT loaded here, only in the order. */}
-        {order.voiceNote && <span className="chip spec-chip">🎤 voice note</span>}
-      </div>
-
-      <div style={{ margin: '12px 0 8px' }} onClick={go}><StagePipeline stage={order.stage} compact /></div>
+      {/* Status */}
+      <div style={{ margin: '10px 0 8px' }} onClick={go}><StagePipeline stage={order.stage} compact /></div>
       {(() => {
         const s = stageInfo(order.stage);
         return (
@@ -117,32 +114,27 @@ function OrderCard({ order, channelCode, createdByName, inFeed }) {
         );
       })()}
 
-      {/* Deliberate, obvious way into the full order — the whole card is still
-          tappable, but this makes "where do I click for details" unmistakable. */}
-      <button type="button" className="btn btn-details btn-block" style={{ marginTop: 12 }} onClick={go}>
-        View details →
-      </button>
-
       {createdByName && (
         <div className="faint" style={{ fontSize: 11, marginTop: 8 }}>
           Created by {createdByName} · {formatDateTime(order.createdAt)}
         </div>
       )}
 
+      {/* Actions — Start work + a wide WhatsApp button, on one line */}
       {(primary || danger || canShare) && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           {danger && (
             <button className="btn btn-danger" style={{ flex: '0 0 auto' }}
               onClick={(e) => { e.stopPropagation(); setStage(order, danger.to, profile); }}>{danger.label}</button>
           )}
           {primary && (
-            <button className="btn btn-primary" style={{ flex: 1, minWidth: 120 }}
+            <button className="btn btn-primary" style={{ flex: 1 }}
               onClick={(e) => { e.stopPropagation(); setStage(order, primary.to, profile); }}>{primary.label}</button>
           )}
           {canShare && (
-            <button className="btn btn-wa" style={{ flex: primary ? '0 0 auto' : 1 }}
+            <button className="btn btn-wa" style={{ flex: 1.4 }}
               onClick={(e) => { e.stopPropagation(); shareOrder(order); }}>
-              <IcWhatsApp size={18} /> {primary ? '' : 'Share'}
+              <IcWhatsApp size={18} /> Share
             </button>
           )}
         </div>

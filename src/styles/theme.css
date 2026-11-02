@@ -1,8 +1,10 @@
 /* ============ AJKO design system ============ */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&display=swap');
 
 :root {
-  --bg: #faf7f4;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --bg: #f7f3ee;
   --primary: #ff6b35;
   --primary-dark: #e85a28;
   --primary-soft: #fff1ea;
@@ -532,3 +534,136 @@ body { text-rendering: optimizeLegibility; }
 
 /* Momentum scrolling (doesn't affect instant scroll-restore) */
 .screen { -webkit-overflow-scrolling: touch; }
+
+/* ============ Amber Mono Linen facelift (v59) ============ */
+/* Mono accent on the brand wordmark, serial numbers, stats and screen titles —
+   gives the app editorial "weight" without hurting body-text readability.
+   Orange stays the single statement colour. */
+.order-no,
+.stat-card .num,
+.topbar h1,
+.boot-word,
+.boot-ticker {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1;
+}
+.order-no { font-weight: 700; letter-spacing: -0.01em; }
+.stat-card .num { font-weight: 700; }
+.topbar h1 { font-weight: 600; font-size: 20px; letter-spacing: -0.01em; }
+
+/* Linen depth: an ultra-subtle warm vignette behind everything. */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(255,138,91,0.05) 0%, rgba(255,138,91,0) 60%),
+    radial-gradient(90% 60% at 100% 110%, rgba(255,181,120,0.045) 0%, rgba(255,181,120,0) 55%);
+}
+
+/* ---- App reveal (fade up beneath the lifting boot screen) ---------------- */
+/* Opacity only — never transform — so position:fixed chrome stays anchored. */
+.app-reveal { opacity: 1; }
+.app-reveal.pre { opacity: 0; }
+.app-reveal.in { opacity: 1; animation: appRevealIn .7s ease both; }
+@keyframes appRevealIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- Boot screen -------------------------------------------------------- */
+.boot {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  transform-origin: 50% 46%;
+  will-change: transform, opacity;
+}
+.boot-leaving {
+  animation: bootLeave .72s cubic-bezier(.4,0,.2,1) forwards;
+}
+@keyframes bootLeave {
+  from { opacity: 1; transform: perspective(1400px) rotateX(0deg) scale(1); }
+  to   { opacity: 0; transform: perspective(1400px) rotateX(10deg) scale(1.12) translateY(-4%); }
+}
+.boot-inner {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 24px; text-align: center;
+  animation: fadeIn .5s ease both;
+}
+.boot-mark {
+  width: 66px; height: 66px; border-radius: 22px;
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, #ff9163, var(--primary) 55%, var(--primary-dark));
+  box-shadow: 0 14px 34px rgba(255,107,53,.42), inset 0 0 0 1px rgba(255,255,255,.14);
+  margin-bottom: 20px;
+}
+.boot-word {
+  font-size: clamp(52px, 17vw, 76px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  margin: 0;
+}
+.boot-tag {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.34em;
+  color: var(--ink-faint);
+  padding-left: 0.34em; /* optical: balance the trailing letter-spacing */
+}
+.boot-ticker {
+  margin-top: 30px;
+  font-size: 30px; font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.boot-pct { font-size: 17px; color: var(--ink-faint); margin-left: 2px; }
+.boot-progress {
+  margin-top: 16px;
+  width: 190px; height: 4px; border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.boot-progress-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #ff9163, var(--primary));
+  transition: width .12s linear;
+}
+
+/* ---- Text shimmer (brand wordmark) -------------------------------------- */
+.shimmer-text {
+  background: linear-gradient(100deg,
+    var(--ink) 0%, var(--ink) 40%,
+    var(--primary) 50%,
+    var(--ink) 60%, var(--ink) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: shimmerSweep 2.6s ease-in-out infinite;
+}
+@keyframes shimmerSweep {
+  0%   { background-position: 150% 0; }
+  100% { background-position: -150% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text { animation: none; }
+  .boot-leaving { animation: bootLeaveReduced .4s ease forwards; }
+  @keyframes bootLeaveReduced { to { opacity: 0; } }
+}
+
+/* ---- Order card redesign (v60): compact, image-first ------------------- */
+.card-order { padding: 14px; }
+/* Line 1: order no (left) · View details (centre) · status badge (right) */
+.oc-top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.oc-top .order-no { font-size: 22px; }
+.oc-top .btn-details-sm { justify-self: center; }
+.oc-badge { justify-self: end; display: flex; align-items: center; }
+/* Store number — bolder/bigger than before, smaller than the AJKO number. */
+.store-no { font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.1; }
+/* Compact, inline "View details" pill. */
+.btn-details-sm { width: auto; padding: 7px 13px; font-size: 12.5px; border-radius: 999px; white-space: nowrap; }
+/* Smaller image tiles on the dashboard card only (viewer still opens full-size). */
+.oc-media .media-strip img, .oc-media .media-strip video { height: 118px; min-width: 118px; }
+.oc-media .media-strip.single img, .oc-media .media-strip.single video { width: 100%; height: 168px; }
+
+/* Lightbox loading spinner (so the viewer is never a blank black screen). */
+.lightbox-spin { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 105; }
