@@ -34,7 +34,6 @@ export default function BootScreen({ leaving }) {
       <div className="boot-inner">
         <div className="boot-mark"><IcDiamond size={34} color="#fff" /></div>
         <h1 className="boot-word shimmer-text">AJKO</h1>
-        <div className="boot-tag">ARJUN&nbsp;&nbsp;JEWELLERS</div>
         <div className="boot-ticker">{pct}<span className="boot-pct">%</span></div>
         <div className="boot-progress"><div className="boot-progress-fill" style={{ width: `${pct}%` }} /></div>
       </div>
