@@ -105,7 +105,10 @@ function ZoomableImage({ src, alt }) {
   );
 }
 
-export default function MediaStrip({ media = [], single }) {
+// When `onItemClick` is given, tapping a thumbnail runs it (e.g. open the order)
+// instead of opening the fullscreen viewer — used on dashboard cards so images
+// are only viewed inside the order detail.
+export default function MediaStrip({ media = [], single, onItemClick }) {
   const [lightbox, setLightbox] = useState(null); // {url, isVideo}
   const close = () => setLightbox(null);
 
@@ -121,7 +124,11 @@ export default function MediaStrip({ media = [], single }) {
 
   if (!media || media.length === 0) return null;
 
-  const open = (e, item) => { e.stopPropagation(); setLightbox(item); };
+  const open = (e, item) => {
+    e.stopPropagation();
+    if (onItemClick) { onItemClick(e); return; } // card: go to details instead of the viewer
+    setLightbox(item);
+  };
 
   return (
     <>

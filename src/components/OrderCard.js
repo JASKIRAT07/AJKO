@@ -101,7 +101,8 @@ function OrderCard({ order, channelCode, createdByName, inFeed }) {
       {/* The image — the heart of the card (compact tile) */}
       {order.images?.length > 0 && (
         <div className="oc-media" style={{ marginTop: 10 }}>
-          <MediaStrip media={order.images} />
+          {/* On the card, tapping an image opens the order detail (not a viewer). */}
+          <MediaStrip media={order.images} onItemClick={go} />
         </div>
       )}
 
