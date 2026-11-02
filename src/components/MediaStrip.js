@@ -1,20 +1,32 @@
 import { useState, useRef, useEffect } from 'react';
 
 // Fullscreen image with double-tap / double-click + pinch zoom and pan.
-// At rest (scale 1) the image carries NO transform and NO will-change, so it is
-// a plain, always-painted element — this avoids the iOS/Safari bug where a
-// persistently composited <img> only repaints while it is being touched (the
-// "blank until you press and hold" symptom). A GPU layer is created only while
-// actually zoomed. A spinner shows until the full image loads, so it is never a
-// blank black screen. Nothing about upload/storage/thumbnails/sharing changes.
+// Two iOS/Safari pitfalls are handled:
+//  1) At rest (scale 1) the image carries NO transform and NO will-change, so it
+//     is a plain, always-painted element — avoids the bug where a persistently
+//     composited <img> only repaints while touched ("blank until press-and-hold").
+//  2) The image is NEVER hidden by React state. Safari often does not fire onLoad
+//     for a CACHED image, so gating visibility on onLoad left it invisible over
+//     the dark backdrop (a black screen). Instead the image is always visible and
+//     a spinner sits BEHIND it; the spinner is cleared via onLoad OR the img's
+//     `complete` flag on mount. onError shows a clear message, never a black void.
 function ZoomableImage({ src, alt }) {
+  const imgRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [t, setT] = useState({ scale: 1, x: 0, y: 0 });
   const g = useRef({});
   const mouse = useRef(null);
   const lastTap = useRef(0);
   const stop = (e) => e.stopPropagation();
   const zoomed = t.scale > 1;
+
+  // Cached images may not fire onLoad in Safari — detect via `complete` on mount.
+  useEffect(() => {
+    setLoaded(false); setFailed(false);
+    const im = imgRef.current;
+    if (im && im.complete && im.naturalWidth > 0) setLoaded(true);
+  }, [src]);
 
   const dist = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
   const toggle = () => setT((p) => (p.scale > 1 ? { scale: 1, x: 0, y: 0 } : { scale: 2.5, x: 0, y: 0 }));
@@ -49,11 +61,19 @@ function ZoomableImage({ src, alt }) {
 
   return (
     <>
-      {!loaded && <div className="lightbox-spin"><div className="spinner" /></div>}
+      {!loaded && !failed && <div className="lightbox-spin"><div className="spinner" /></div>}
+      {failed && (
+        <div className="lightbox-fail">
+          <div style={{ fontSize: 34, marginBottom: 10 }}>🖼️</div>
+          Couldn’t load this image.<br />Check your connection and try again.
+        </div>
+      )}
       <img
+        ref={imgRef}
         src={src}
         alt={alt}
         onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
         onClick={stop}
         onDoubleClick={(e) => { stop(e); toggle(); }}
         onTouchStart={onTouchStart}
@@ -72,12 +92,13 @@ function ZoomableImage({ src, alt }) {
           transition: (g.current.mode || mouse.current) ? 'none' : 'transform .18s ease',
           willChange: zoomed ? 'transform' : 'auto',
           cursor: zoomed ? 'grab' : 'zoom-in',
-          display: 'block',
+          position: 'relative',
+          zIndex: 2, // sits above the spinner that is behind it
+          display: failed ? 'none' : 'block',
           maxWidth: '100%',
           maxHeight: '86vh',
           objectFit: 'contain',
           borderRadius: 12,
-          opacity: loaded ? 1 : 0,
         }}
       />
     </>
@@ -109,8 +130,18 @@ export default function MediaStrip({ media = [], single }) {
           const url = typeof m === 'string' ? m : m.url;
           const isVideo = (typeof m === 'object' && m.type === 'video') || /\.(mp4|mov|webm)/i.test(url || '');
           return isVideo
-            ? <video key={i} src={url} controls playsInline onClick={(e) => open(e, { url, isVideo })} />
-            : <img key={i} src={url} alt={`media ${i + 1}`} onClick={(e) => open(e, { url, isVideo })} />;
+            ? <video key={i} src={url} controls playsInline preload="metadata" onClick={(e) => open(e, { url, isVideo })} />
+            : (
+              <img
+                key={i}
+                src={url}
+                alt={`media ${i + 1}`}
+                loading="lazy"
+                decoding="async"
+                onClick={(e) => open(e, { url, isVideo })}
+                onError={(e) => { e.currentTarget.style.opacity = '0'; }}
+              />
+            );
         })}
       </div>
 

@@ -651,22 +651,30 @@ body::before {
 }
 
 /* ---- Order card redesign (v60): compact, image-first ------------------- */
-.card-order { padding: 14px; }
+.card-order { padding: 15px; }
 /* Line 1: order no (left) · View details (centre) · status badge (right) */
 .oc-top { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
-.oc-top .order-no { font-size: 22px; }
+.oc-top .order-no { font-size: 21px; }
 .oc-top .btn-details-sm { justify-self: center; }
 .oc-badge { justify-self: end; display: flex; align-items: center; }
-/* Store number — bolder/bigger than before, smaller than the AJKO number. */
-.store-no { font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--ink); line-height: 1.1; }
-/* Compact, inline "View details" pill. */
-.btn-details-sm { width: auto; padding: 7px 13px; font-size: 12.5px; border-radius: 999px; white-space: nowrap; }
+/* Store number — secondary meta line under the top row. */
+.store-no { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; color: var(--ink-soft); line-height: 1.1; }
+/* Item / vendor name — the card's headline, the most prominent descriptor. */
+.oc-name-row { display: flex; gap: 7px; align-items: center; margin-top: 7px; flex-wrap: wrap; }
+.oc-name { font-weight: 800; font-size: 18px; letter-spacing: -0.015em; color: var(--ink); line-height: 1.15; }
+/* Prominent inline "View details" pill. */
+.btn-details-sm {
+  width: auto; padding: 8px 15px; font-size: 13px; font-weight: 800;
+  border-radius: 999px; white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(255,107,53,.2);
+}
 /* Smaller image tiles on the dashboard card only (viewer still opens full-size). */
 .oc-media .media-strip img, .oc-media .media-strip video { height: 118px; min-width: 118px; }
 .oc-media .media-strip.single img, .oc-media .media-strip.single video { width: 100%; height: 168px; }
 
 /* Lightbox loading spinner (so the viewer is never a blank black screen). */
-.lightbox-spin { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 105; }
+.lightbox-spin { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 1; }
+.lightbox-fail { position: fixed; inset: 0; z-index: 2; display: grid; place-content: center; text-align: center; color: rgba(255,255,255,.9); font-size: 14px; line-height: 1.5; padding: 24px; pointer-events: none; }
 
 /* ---- Details "morph open" — the card expands into the detail view -------- */
 .detail-morph { animation: detailMorphIn .42s cubic-bezier(.2,.8,.2,1); transform-origin: 50% 8%; }

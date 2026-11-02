@@ -88,12 +88,12 @@ function OrderCard({ order, channelCode, createdByName, inFeed }) {
         <div className="oc-badge"><UrgencyBadge urgency={urg} /></div>
       </div>
 
-      {/* Line 2: store number (bold) + the basic order info */}
+      {/* Line 2: store number (meta) + the prominent item / vendor name */}
       <div onClick={go} style={{ cursor: 'pointer', marginTop: 9 }}>
         <div className="store-no">Store #{order.storeOrderNo}</div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 5, flexWrap: 'wrap' }}>
+        <div className="oc-name-row">
           {channelCode && <span className="chip spec-chip" style={{ fontWeight: 700 }}>💬 {channelCode}</span>}
-          <span style={{ fontWeight: 700, fontSize: 15 }}>{order.itemName}</span>
+          <span className="oc-name">{order.itemName}</span>
           {order.edited && <EditedBadge />}
         </div>
       </div>
