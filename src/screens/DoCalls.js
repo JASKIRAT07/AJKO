@@ -4,7 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../context/AuthContext';
 import { functions } from '../firebase';
 import { useUsers, useChannels, useDoCalls } from '../hooks/useCollections';
-import { usePlivoBrowser } from '../hooks/usePlivoBrowser';
+import { usePhoneBridge } from '../hooks/usePhoneBridge';
 import { setChannelDefaultVendor } from '../utils/actions';
 import { toDate, formatDateTime } from '../utils/format';
 import BottomNav from '../components/BottomNav';
@@ -54,30 +54,23 @@ function fmtDur(sec) {
 
 export default function DoCalls() {
   const nav = useNavigate();
-  const { profile, isAdmin, isTeam } = useAuth();
-  const canCall = isAdmin || isTeam; // admins + staff place calls
+  const { profile, isAdmin } = useAuth();
   const { data: users } = useUsers();
   const { data: channels } = useChannels(profile);
   const { data: doCalls } = useDoCalls(isAdmin); // recordings are admin-only
 
-  // Browser calling (staff talk through the app, no SIM). Logs in on the Do Calls
-  // screen; placeCall() dials a karigar via WebRTC, masked behind the shop number.
+  // Phone-ring bridge (reliable): tapping Call rings the staff's OWN phone, then
+  // bridges to the vendor masked behind the shop number. No browser mic/audio.
   const {
-    status: callStatus, call, muted, duration, micLevel, minimized, errorMsg,
-    placeCall, hangup, toggleMute, minimize, expand,
-  } = usePlivoBrowser(canCall);
-  const [callNote, setCallNote] = useState('');
+    call, duration, note: callNote, setNote: setCallNote, placing, minimized,
+    placeCall, hangup, minimize, expand,
+  } = usePhoneBridge();
 
   const onCall = (vendor) => {
-    if (callStatus !== 'ready') {
-      setCallNote(callStatus === 'connecting' ? 'Connecting the calling line… try again in a moment.'
-        : callStatus === 'unprovisioned' ? 'Calling isn’t set up yet (run provisioning once).'
-          : 'Calling line not ready — refresh the page.');
-      return;
-    }
+    if (call || placing) return;
     if (!vendor.phone) { setCallNote(`${vendor.code || vendor.name} has no phone number on file.`); return; }
     setCallNote('');
-    placeCall(vendor.phone, vendor);
+    placeCall(vendor);
   };
 
   const [tab, setTab] = useState('calls'); // 'calls' | 'recordings'
@@ -182,17 +175,10 @@ export default function DoCalls() {
               </div>
             </div>
 
-            {/* Calling-line status */}
-            <div className="faint" style={{ fontSize: 12, margin: '8px 2px 2px' }}>
-              {callStatus === 'ready' ? '🟢 Calling line ready'
-                : callStatus === 'connecting' ? '⏳ Connecting calling line…'
-                  : callStatus === 'unprovisioned' ? '⚙️ Calling not set up yet (run provisioning once)'
-                    : callStatus === 'error' ? '🔴 Calling line unavailable — refresh'
-                      : ''}
+            {/* How it works — tapping Call rings the staff's own phone. */}
+            <div className="faint" style={{ fontSize: 12, margin: '8px 2px 6px' }}>
+              📞 Tap Call → your phone rings → answer it → you’re connected to the vendor.
             </div>
-            {(callStatus === 'error' || callStatus === 'unprovisioned') && errorMsg && (
-              <div className="faint" style={{ fontSize: 11, margin: '0 2px 6px', color: 'var(--red)', wordBreak: 'break-word' }}>{errorMsg}</div>
-            )}
 
             {callNote && (
               <div className="card glow-orange" style={{ margin: '10px 0', display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -231,7 +217,7 @@ export default function DoCalls() {
                             {isDefault ? '★' : '☆'}
                           </button>
                         )}
-                        <button className="btn btn-primary" style={{ padding: '9px 18px', flexShrink: 0, gap: 6 }} disabled={!!call} onClick={() => onCall(v)}>
+                        <button className="btn btn-primary" style={{ padding: '9px 18px', flexShrink: 0, gap: 6 }} disabled={!!call || placing} onClick={() => onCall(v)}>
                           <IcPhoneOutgoing size={16} /> Call
                         </button>
                       </div>
@@ -307,10 +293,7 @@ export default function DoCalls() {
       <CallScreen
         call={call}
         duration={duration}
-        micLevel={micLevel}
-        muted={muted}
         minimized={minimized}
-        onMute={toggleMute}
         onEnd={hangup}
         onMinimize={minimize}
         onExpand={expand}

@@ -20,7 +20,18 @@ export default function CallScreen({
 }) {
   if (!call) return null;
   const connected = call.state === 'connected';
-  const stateText = call.state === 'dialing' ? 'Calling…' : call.state === 'ringing' ? 'Ringing…' : fmt(duration);
+  // Phone-ring bridge has no browser mic → no mute/mic UI (audio is on the phone).
+  const phoneMode = !onMute;
+  const stateText = call.state === 'dialing' ? 'Calling…'
+    : call.state === 'dialing-staff' ? 'Pick up your phone…'
+      : call.state === 'ringing' ? 'Ringing…'
+        : call.state === 'ringing-vendor' ? 'Connecting…'
+          : fmt(duration);
+  const hint = phoneMode
+    ? (connected ? 'Talking on your phone — you can switch apps'
+      : call.state === 'dialing-staff' ? 'Answer the call on your phone'
+        : 'Connecting you to the vendor…')
+    : 'Keep this screen open during the call';
   const level = Math.min(1, Math.max(0, micLevel || 0));
 
   const styleTag = (
@@ -86,12 +97,12 @@ export default function CallScreen({
         </div>
         <div style={{ fontSize: 27, fontWeight: 800, marginTop: 22 }}>{call.label}</div>
         <div style={{ fontSize: 16, color: '#9fe3bf', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{stateText}</div>
-        <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.5)', marginTop: 12 }}>Keep this screen open during the call</div>
+        <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.5)', marginTop: 12 }}>{hint}</div>
       </div>
 
-      {/* Live mic indicator */}
+      {/* Live mic indicator — browser-call mode only (phone mode has no mic). */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minHeight: 34 }}>
-        {connected && (
+        {!phoneMode && connected && (
           <>
             <div style={{ fontSize: 12, color: muted ? '#f87171' : '#9fe3bf' }}>{muted ? '🔇 Your mic is muted' : '🎤 Mic is live'}</div>
             <div className="cs-meter"><div style={{ width: `${muted ? 0 : Math.round(level * 100)}%` }} /></div>
@@ -99,14 +110,16 @@ export default function CallScreen({
         )}
       </div>
 
-      {/* Controls — Mute + End. Output volume is the phone's own volume keys. */}
+      {/* Controls — End always; Mute only in browser-call mode. */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 56 }}>
-        <div style={{ textAlign: 'center' }}>
-          <button className={`cs-btn ${muted ? 'on' : ''}`} onClick={onMute} aria-label={muted ? 'Unmute mic' : 'Mute mic'}>
-            <span style={{ fontSize: 26 }}>{muted ? '🔇' : '🎤'}</span>
-          </button>
-          <div style={{ fontSize: 12, marginTop: 8, color: '#cfeede' }}>{muted ? 'Unmute' : 'Mute'}</div>
-        </div>
+        {!phoneMode && (
+          <div style={{ textAlign: 'center' }}>
+            <button className={`cs-btn ${muted ? 'on' : ''}`} onClick={onMute} aria-label={muted ? 'Unmute mic' : 'Mute mic'}>
+              <span style={{ fontSize: 26 }}>{muted ? '🔇' : '🎤'}</span>
+            </button>
+            <div style={{ fontSize: 12, marginTop: 8, color: '#cfeede' }}>{muted ? 'Unmute' : 'Mute'}</div>
+          </div>
+        )}
 
         <div style={{ textAlign: 'center' }}>
           <button className="cs-end" onClick={onEnd} aria-label="End call" style={{ transform: 'rotate(135deg)' }}>

@@ -787,3 +787,152 @@ exports.plivoDoCallLeg = onRequest(async (req, res) => {
   } catch (e) { logger.error('leg status update failed', e); }
   res.status(200).json({ ok: true });
 });
+
+// ============================================================================
+// STEP 5 — PHONE-RING BRIDGE (reliable calling, no browser audio)
+//
+// Why: browser (WebRTC) audio to Indian mobiles is unreliable — calls connect
+// but voice is often dropped. This flow avoids the browser mic entirely:
+//   1. Staff taps a vendor in the app → plivoDialStaff RINGS THE STAFF'S PHONE
+//      (caller id = shop number) and logs a doCalls row.
+//   2. Staff answers → Plivo fetches plivoStaffBridgeAnswer → whispers the vendor
+//      name to the staff only, then <Dial>s the vendor MASKED as the shop number
+//      and starts recording.
+//   3. Live status + hangup + recording reuse the SAME webhooks as before
+//      (plivoDoCallLeg / plivoDoCallHangup / plivoDoCallRecordingDone), matched
+//      by callUuid. Both legs are normal phone calls → audio just works, and it
+//      survives app-switching.
+// Isolated: new functions only; nothing existing is modified.
+// ============================================================================
+
+const STAFF_BRIDGE_ANSWER_URL = 'https://us-central1-ajko-48799.cloudfunctions.net/plivoStaffBridgeAnswer';
+
+// Normalise an Indian number to E.164 (+91XXXXXXXXXX). Best-effort.
+function toE164(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.length === 10) return `+91${d}`;
+  if (d.length === 11 && d.startsWith('0')) return `+91${d.slice(1)}`;
+  if (d.length === 12 && d.startsWith('91')) return `+${d}`;
+  return d.startsWith('+') ? d : `+${d}`;
+}
+
+// ---- 15. DIAL STAFF (callable) ---------------------------------------------
+// The app calls this when staff taps "Call". Rings the staff's own phone; the
+// vendor is dialed only after the staff picks up (in plivoStaffBridgeAnswer).
+exports.plivoDialStaff = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, async (req) => {
+  const me = await requireStaff(req);
+  const vendorId = String((req.data && req.data.vendorId) || '').trim();
+  if (!vendorId) throw new HttpsError('invalid-argument', 'Missing vendorId.');
+
+  const staffPhone = toE164(me.phone);
+  if (!staffPhone) throw new HttpsError('failed-precondition', 'No phone number on your profile to ring.');
+
+  const vdoc = await db.collection('users').doc(vendorId).get();
+  if (!vdoc.exists) throw new HttpsError('not-found', 'Vendor not found.');
+  const vd = vdoc.data();
+  const karigar = toE164(vd.phone);
+  if (!karigar) throw new HttpsError('failed-precondition', 'This vendor has no phone number on file.');
+  const vendorName = vd.name || vd.code || 'the vendor';
+  const vendorCode = vd.code || null;
+  const channelId = vd.channelId || null;
+
+  const clientCallId = crypto.randomBytes(12).toString('hex');
+  const ref = await db.collection('doCalls').add({
+    clientCallId, source: 'phonebridge',
+    staffId: me.id, staffName: me.name || me.code || null, staffPhone,
+    vendorId, vendorName, vendorCode, karigar, channelId,
+    legStatus: 'dialing-staff', status: 'in-progress',
+    at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  const params = new URLSearchParams({ cc: clientCallId, k: karigar, vn: vendorName });
+  const answerUrl = `${STAFF_BRIDGE_ANSWER_URL}?${params.toString()}`;
+  const r = await fetch(`${plivoBase()}/Call/`, {
+    method: 'POST',
+    headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: PLIVO_NUMBER, to: staffPhone,
+      answer_url: answerUrl, answer_method: 'POST',
+      hangup_url: DOCALL_HANGUP_URL, hangup_method: 'POST',
+    }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    logger.error('plivoDialStaff: outbound call failed', data);
+    try { await ref.set({ legStatus: 'failed', status: 'failed' }, { merge: true }); } catch (e) { /* noop */ }
+    throw new HttpsError('internal', 'Could not start the call. Check the number and try again.');
+  }
+  try { await ref.set({ requestUuid: data.request_uuid || null }, { merge: true }); } catch (e) { /* noop */ }
+  logger.info('plivoDialStaff OK', { clientCallId, staffPhone, karigar, vendorId });
+  return { ok: true, clientCallId };
+});
+
+// ---- 16. STAFF BRIDGE ANSWER (HTTP, public) --------------------------------
+// Plivo fetches this when the STAFF answers their phone. Whisper the vendor name
+// to the staff, then dial the vendor masked as the shop number + record.
+exports.plivoStaffBridgeAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, async (req, res) => {
+  res.set('Content-Type', 'text/xml');
+  const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
+  const callUuid = String(p.CallUUID || '').trim();
+  const clientCallId = String(p.cc || '').trim();
+  const karigar = String(p.k || '').trim();
+  const vendorName = String(p.vn || 'the vendor').trim();
+
+  if (!karigar) {
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?>\n<Response><Speak>Sorry, there is no number to connect.</Speak></Response>');
+    return;
+  }
+
+  // Link the staff-leg callUuid to the row + mark that the staff has answered.
+  try {
+    const snap = await db.collection('doCalls').where('clientCallId', '==', clientCallId).limit(1).get();
+    if (!snap.empty) await snap.docs[0].ref.set({ callUuid, legStatus: 'staff-answered' }, { merge: true });
+  } catch (e) { logger.error('bridge: link callUuid failed', e); }
+
+  // Record the whole bridged call (best-effort).
+  try {
+    if (callUuid) {
+      await fetch(`${plivoBase()}/Call/${callUuid}/Record/`, {
+        method: 'POST',
+        headers: { Authorization: plivoAuthHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_format: 'mp3', time_limit: 3600,
+          callback_url: DOCALL_RECORDING_DONE_URL, callback_method: 'POST',
+          transcription_type: 'auto', transcription_url: DOCALL_TRANSCRIPTION_URL, transcription_method: 'POST',
+        }),
+      });
+    }
+  } catch (e) { logger.error('bridge: record start failed', e); }
+
+  // Whisper the vendor name to the STAFF only (vendor not yet connected), then
+  // dial the vendor masked as the shop number. Live status via callbackUrl.
+  const xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<Response>'
+    + `<Speak>Connecting you to ${escapeXml(vendorName)}.</Speak>`
+    + `<Dial callerId="${escapeXml(PLIVO_NUMBER)}" callerName="AJKO" timeout="30" `
+    + `action="${escapeXml(DOCALL_HANGUP_URL)}" callbackUrl="${escapeXml(DOCALL_LEG_URL)}" callbackMethod="POST">`
+    + `<Number>${escapeXml(karigar)}</Number>`
+    + '</Dial>'
+    + '</Response>';
+  logger.info('plivoStaffBridgeAnswer → bridging', { callUuid, clientCallId, karigar });
+  res.status(200).send(xml);
+});
+
+// ---- 17. END CALL (callable) -----------------------------------------------
+// The app's "End" button hangs up the staff leg (which tears down the bridge).
+exports.plivoEndCall = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, async (req) => {
+  await requireStaff(req);
+  const clientCallId = String((req.data && req.data.clientCallId) || '').trim();
+  if (!clientCallId) throw new HttpsError('invalid-argument', 'Missing clientCallId.');
+  try {
+    const snap = await db.collection('doCalls').where('clientCallId', '==', clientCallId).limit(1).get();
+    if (!snap.empty) {
+      const callUuid = snap.docs[0].data().callUuid;
+      if (callUuid) {
+        await fetch(`${plivoBase()}/Call/${callUuid}/`, { method: 'DELETE', headers: { Authorization: plivoAuthHeader() } });
+      }
+    }
+  } catch (e) { logger.error('plivoEndCall failed', e); }
+  return { ok: true };
+});
