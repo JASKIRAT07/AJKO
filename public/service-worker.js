@@ -46,7 +46,7 @@ self.addEventListener('notificationclick', (event) => {
    - index.html / navigations: network-first → new deploys are picked up at once.
    - Firestore / Auth / FCM / signed (expiring) URLs: never cached.            */
 const CACHE = 'ajko-v4';
-const IMG_CACHE = 'ajko-img-v1';
+const IMG_CACHE = 'ajko-img-v2';
 const KEEP = [CACHE, IMG_CACHE];
 
 self.addEventListener('install', (e) => {
@@ -69,7 +69,10 @@ function cacheFirst(request, cacheName) {
 function staleWhileRevalidate(request, cacheName) {
   return caches.open(cacheName).then((c) => c.match(request).then((hit) => {
     const net = fetch(request)
-      .then((res) => { if (res && res.ok) c.put(request, res.clone()).catch(() => {}); return res; })
+      // Cross-origin <img> loads (Firebase Storage, Stream thumbs) come back as
+      // OPAQUE responses (status 0, ok=false) — they are cacheable and must be
+      // stored, or images re-download on every navigation.
+      .then((res) => { if (res && (res.ok || res.type === 'opaque')) c.put(request, res.clone()).catch(() => {}); return res; })
       .catch(() => hit);
     return hit || net;
   }));

@@ -43,7 +43,12 @@ export async function uploadFile(file, folder = 'orders', opts = {}) {
   const safe = (toSend.name || 'file').replace(/[^\w.-]/g, '_');
   const path = `${folder}/${Date.now()}_${Math.round(Math.random() * 1e6)}_${safe}`;
   const r = ref(storage, path);
-  await uploadBytes(r, toSend);
+  // Each upload has a unique path → the file is immutable, so let the browser
+  // cache it for a year. This makes images load instantly on repeat views and
+  // re-navigation (list → detail → back) instead of re-downloading each time.
+  const metadata = { cacheControl: 'public, max-age=31536000, immutable' };
+  if (toSend.type) metadata.contentType = toSend.type;
+  await uploadBytes(r, toSend, metadata);
   const url = await getDownloadURL(r);
   return { url, type: file.type?.startsWith('video') ? 'video' : 'image', name: file.name || safe };
 }
