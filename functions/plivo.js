@@ -747,25 +747,55 @@ exports.plivoDoCallRecordingDone = onRequest(
 );
 
 // ---- 13. DO-CALL TRANSCRIPTION (HTTP, public) ------------------------------
-// Plivo posts the transcription of a recording here → store it on the doCalls
-// row so it shows under the recording in the AJKO Recordings tab.
-exports.plivoDoCallTranscription = onRequest(async (req, res) => {
-  const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
-  const callUuid = String(p.CallUUID || p.call_uuid || '').trim();
-  // Plivo sends the transcript text under one of these keys.
-  const text = String(
-    p.transcription || p.transcription_text || p.transcript || p.text
-    || (p.transcription_data && (p.transcription_data.transcription || p.transcription_data.text)) || '',
-  ).trim();
-  logger.info('Plivo → DoCall transcription', { keys: Object.keys(p), callUuid, len: text.length });
-  try {
-    if (callUuid && text) {
+// Plivo posts the transcription of a recording here. This webhook is the
+// RELIABLE moment to also save the recording itself: it carries the recording_id
+// and the audio is finished by transcription time (the dedicated recording
+// callback has proven to arrive empty). So here we: store the transcript AND
+// fetch the recording from Plivo → upload to R2 → link it on the row, so it
+// plays in the Recordings tab with no on-demand step.
+exports.plivoDoCallTranscription = onRequest(
+  { secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN, ...R2_SECRETS] },
+  async (req, res) => {
+    const p = { ...(req.query || {}), ...((req.body && typeof req.body === 'object') ? req.body : {}) };
+    const callUuid = String(p.CallUUID || p.call_uuid || '').trim();
+    const recId = String(p.recording_id || p.recordingId || p.RecordingID || '').trim();
+    const dur = Number(p.duration || p.Duration || p.recording_duration || 0) || null;
+    const text = String(
+      p.transcription || p.transcription_text || p.transcript || p.text
+      || (p.transcription_data && (p.transcription_data.transcription || p.transcription_data.text)) || '',
+    ).trim();
+    logger.info('Plivo → DoCall transcription', { keys: Object.keys(p), callUuid, recId, len: text.length });
+
+    const findRow = async () => {
+      if (!callUuid) return null;
       const snap = await db.collection('doCalls').where('callUuid', '==', callUuid).limit(1).get();
-      if (!snap.empty) await snap.docs[0].ref.set({ transcript: text }, { merge: true });
-    }
-  } catch (e) { logger.error('transcription store failed', e); }
-  res.status(200).json({ ok: true });
-});
+      return snap.empty ? null : snap.docs[0].ref;
+    };
+
+    try {
+      const row = await findRow();
+      if (row && text) await row.set({ transcript: text }, { merge: true });
+
+      // Save the recording to R2 (best-effort; never breaks the webhook).
+      if (row && recId) {
+        try {
+          const r = await fetch(`${plivoBase()}/Recording/${recId}/`, { headers: { Authorization: plivoAuthHeader() } });
+          const j = await r.json().catch(() => ({}));
+          const recordUrl = (j && (j.recording_url || j.record_url)) || '';
+          if (recordUrl) {
+            const key = `recordings/${callUuid}.mp3`;
+            await ingestRecordingToR2(recordUrl, key);
+            await row.set({ recordingKey: key, recordingId: recId, durationSec: dur || undefined }, { merge: true });
+            logger.info('recording saved to R2 from transcription', { callUuid, recId, key });
+          } else {
+            logger.warn('no recording_url for recId', { recId });
+          }
+        } catch (e) { logger.error('auto-ingest recording failed', e); }
+      }
+    } catch (e) { logger.error('transcription store failed', e); }
+    res.status(200).json({ ok: true });
+  },
+);
 
 // ---- 14. DO-CALL LEG STATUS (HTTP, public) ---------------------------------
 // The <Dial> callbackUrl posts B-leg (karigar) events here. We map them to a
