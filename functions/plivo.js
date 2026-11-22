@@ -884,7 +884,10 @@ exports.plivoDialStaff = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, 
     at: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  const params = new URLSearchParams({ cc: clientCallId, k: karigar, vn: vendorName });
+  // Announce the vendor CODE to the staff (not the name). Hyphens → spaces so
+  // the text-to-speech reads e.g. "SUBH 01" clearly.
+  const announce = String(vendorCode || vendorName || 'the vendor').replace(/-/g, ' ');
+  const params = new URLSearchParams({ cc: clientCallId, k: karigar, vn: announce });
   const answerUrl = `${STAFF_BRIDGE_ANSWER_URL}?${params.toString()}`;
   const r = await fetch(`${plivoBase()}/Call/`, {
     method: 'POST',
