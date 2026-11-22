@@ -229,8 +229,13 @@ export async function updateChannel(id, data) {
 
 // Admin: edit a member's details. Handles vendor channel reassignment (single)
 // and team channel membership (multiple).
-export async function updateMember(user, { name, phone, specialty, channelId, code, channelIds }) {
+export async function updateMember(user, {
+  name, phone, specialty, channelId, code, channelIds, callingNumber,
+}) {
   const patch = { name, phone: normalizePhone(phone), specialty: specialty || '' };
+  // Admin-only "calling receiving number" — the phone that rings when this
+  // person places a Do Call. Stored on the user doc; never shown in the team UI.
+  if (callingNumber !== undefined) patch.callingNumber = callingNumber ? normalizePhone(callingNumber) : '';
 
   if (user.role === 'vendor' && channelId && channelId !== user.channelId) {
     patch.channelId = channelId;

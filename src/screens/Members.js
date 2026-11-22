@@ -263,7 +263,12 @@ function EditMemberModal({ user, users, channels, onClose }) {
   const [specialty, setSpecialty] = useState(user.specialty || '');
   const [channelId, setChannelId] = useState(user.channelId || '');
   const [channelIds, setChannelIds] = useState(user.assignedChannels || []);
+  const [callingNumber, setCallingNumber] = useState(user.callingNumber || '');
   const [busy, setBusy] = useState(false);
+  // Team members have no phone on their profile, so admins set a private "calling
+  // receiving number" (the phone that rings for them). Admins use their own phone
+  // automatically; vendors only receive calls — so neither needs this field.
+  const showCalling = user.role === 'team';
   const toggleCid = (cid) => setChannelIds((prev) => (prev.includes(cid) ? prev.filter((x) => x !== cid) : [...prev, cid]));
 
   const channelChanged = isVendor && channelId && channelId !== user.channelId;
@@ -280,6 +285,7 @@ function EditMemberModal({ user, users, channels, onClose }) {
         channelId: isVendor ? channelId : null,
         code: channelChanged ? newCode : user.code,
         channelIds: isTeam ? channelIds : undefined,
+        callingNumber: showCalling ? callingNumber : undefined,
       });
       onClose();
     } catch (e) { alert(e.message || 'Failed to update'); }
@@ -292,6 +298,16 @@ function EditMemberModal({ user, users, channels, onClose }) {
         <h3 style={{ marginTop: 0 }}>Edit {user.code}</h3>
         <div className="field"><label>Name</label><input className="input" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} /></div>
         {!isTeam && <div className="field"><label>Phone</label><input className="input" autoComplete="off" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>}
+        {showCalling && (
+          <div className="field">
+            <label>📞 Calling receiving number <span className="faint" style={{ fontWeight: 500 }}>(admin-only)</span></label>
+            <input className="input" type="tel" inputMode="tel" autoComplete="off" value={callingNumber}
+              onChange={(e) => setCallingNumber(e.target.value)} placeholder="e.g. 98765 43210" />
+            <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>
+              The phone that rings when {isTeam ? 'this member' : 'you'} tap{isTeam ? 's' : ''} Call in Do Calls. Only admins can see or set this — {isTeam ? 'the team member' : 'nobody else'} never sees it.
+            </div>
+          </div>
+        )}
         {!isTeam && <div className="field"><label>{isVendor ? 'Specialty' : 'Designation'}</label><input className="input" autoComplete="off" value={specialty} onChange={(e) => setSpecialty(e.target.value)} /></div>}
         {isVendor && (
           <div className="field"><label>Channel</label>

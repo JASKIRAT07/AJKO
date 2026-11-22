@@ -825,8 +825,10 @@ exports.plivoDialStaff = onCall({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN] }, 
   const vendorId = String((req.data && req.data.vendorId) || '').trim();
   if (!vendorId) throw new HttpsError('invalid-argument', 'Missing vendorId.');
 
-  const staffPhone = toE164(me.phone);
-  if (!staffPhone) throw new HttpsError('failed-precondition', 'No phone number on your profile to ring.');
+  // Ring the staff member's "calling receiving number" (admin-set, per staff),
+  // falling back to their login phone (admins/vendors have one).
+  const staffPhone = toE164(me.callingNumber || me.phone);
+  if (!staffPhone) throw new HttpsError('failed-precondition', 'No calling number set for your account. Ask an admin to add your "calling receiving number" in Members.');
 
   const vdoc = await db.collection('users').doc(vendorId).get();
   if (!vdoc.exists) throw new HttpsError('not-found', 'Vendor not found.');
