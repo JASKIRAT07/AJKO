@@ -86,6 +86,7 @@ export default function CallScreen({
         </div>
         <div style={{ fontSize: 27, fontWeight: 800, marginTop: 22 }}>{call.label}</div>
         <div style={{ fontSize: 16, color: '#9fe3bf', marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>{stateText}</div>
+        <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.5)', marginTop: 12 }}>Keep this screen open during the call</div>
       </div>
 
       {/* Live mic indicator */}

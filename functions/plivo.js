@@ -683,15 +683,15 @@ exports.plivoBrowserAnswer = onRequest({ secrets: [PLIVO_AUTH_ID, PLIVO_AUTH_TOK
     }
   } catch (e) { logger.error('start record failed', e); }
 
-  // The CALLER (staff) does NOT hear the consent — only the karigar does, via
-  // confirmSound on the B-leg. Dial callbackUrl pushes live leg status (ringing/
-  // answered) so the app can show it.
-  const consent = `${BRIDGE_ANSWER_URL}?leg=b`;
+  // No confirmSound: the karigar is bridged to the staff the INSTANT they pick up.
+  // (The consent message previously played here added several seconds of dead air
+  // before the two sides could talk — the main "takes a long time to connect"
+  // delay.) Masking still holds (karigar sees only the shop number). Dial
+  // callbackUrl pushes live leg status (answered) so the app can show it.
   const xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
     + '<Response>'
     + `<Dial callerId="${escapeXml(PLIVO_NUMBER)}" callerName="AJKO" timeout="30" `
-    + `action="${escapeXml(DOCALL_HANGUP_URL)}" callbackUrl="${escapeXml(DOCALL_LEG_URL)}" callbackMethod="POST" `
-    + `confirmSound="${escapeXml(consent)}">`
+    + `action="${escapeXml(DOCALL_HANGUP_URL)}" callbackUrl="${escapeXml(DOCALL_LEG_URL)}" callbackMethod="POST">`
     + `<Number>${escapeXml(karigar)}</Number>`
     + '</Dial>'
     + '</Response>';

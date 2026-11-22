@@ -33,6 +33,23 @@ export function usePlivoBrowser(enabled) {
   const callIdRef = useRef(null);
   const unsubDoc = useRef(null);
   const connectedRef = useRef(false);
+  const wakeLock = useRef(null);
+
+  // Keep the screen awake during a call so the OS doesn't sleep/suspend the page
+  // (screen sleep is one way the call audio gets cut). Best-effort; released when
+  // the call ends and re-acquired when the app returns to the foreground.
+  const acquireWake = async () => {
+    try {
+      if ('wakeLock' in navigator && !wakeLock.current) {
+        wakeLock.current = await navigator.wakeLock.request('screen');
+        wakeLock.current.addEventListener?.('release', () => { wakeLock.current = null; });
+      }
+    } catch (e) { /* wake lock best-effort */ }
+  };
+  const releaseWake = () => {
+    try { wakeLock.current?.release?.(); } catch (e) { /* noop */ }
+    wakeLock.current = null;
+  };
 
   const clearTimers = () => {
     if (durTimer.current) { clearInterval(durTimer.current); durTimer.current = null; }
@@ -40,7 +57,7 @@ export function usePlivoBrowser(enabled) {
   };
   const stopDocSub = () => { if (unsubDoc.current) { try { unsubDoc.current(); } catch (e) { /* noop */ } unsubDoc.current = null; } };
   const resetCall = () => {
-    clearTimers(); stopDocSub();
+    clearTimers(); stopDocSub(); releaseWake();
     setCall(null); setMuted(false); mutedRef.current = false;
     setDuration(0); setMicLevel(0); setMinimized(false); micRaw.current = 0;
     connectedRef.current = false; callIdRef.current = null;
@@ -111,6 +128,15 @@ export function usePlivoBrowser(enabled) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
+  // Screen wake locks auto-release when the tab is hidden; re-acquire on return
+  // to the foreground if a call is still active.
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible' && callIdRef.current) acquireWake(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const placeCall = useCallback((karigarPhone, vendor) => {
     const c = ref.current?.client;
     const digits = String(karigarPhone || '').replace(/[^0-9]/g, '');
@@ -120,6 +146,7 @@ export function usePlivoBrowser(enabled) {
     const callId = newCallId();
     callIdRef.current = callId;
     setCall({ state: 'dialing', label: vendor?.code || vendor?.name || digits });
+    acquireWake();
     stopDocSub();
     unsubDoc.current = onSnapshot(
       query(collection(db, 'doCalls'), where('clientCallId', '==', callId)),
