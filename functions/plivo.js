@@ -776,13 +776,19 @@ exports.plivoDoCallLeg = onRequest(async (req, res) => {
   const callUuid = String(p.CallUUID || p.call_uuid || '').trim();
   const blob = `${p.Event || p.event || ''} ${p.DialBLegStatus || p.DialStatus || p.Status || p.CallStatus || ''}`.toLowerCase();
   let legStatus = null;
-  if (/(answer|connect|in-?progress)/.test(blob)) legStatus = 'answered';
+  let ended = false;
+  if (/hangup|complete/.test(blob)) ended = true; // call ended → close the card
+  else if (/(answer|connect|in-?progress)/.test(blob)) legStatus = 'answered';
   else if (/ring/.test(blob)) legStatus = 'ringing';
-  logger.info('Plivo → dial leg', { keys: Object.keys(p), callUuid, blob: blob.trim(), legStatus });
+  logger.info('Plivo → dial leg', { keys: Object.keys(p), callUuid, blob: blob.trim(), legStatus, ended });
   try {
-    if (callUuid && legStatus) {
+    if (callUuid && (legStatus || ended)) {
       const snap = await db.collection('doCalls').where('callUuid', '==', callUuid).limit(1).get();
-      if (!snap.empty) await snap.docs[0].ref.set({ legStatus }, { merge: true });
+      if (!snap.empty) {
+        // On hangup, mark the call completed (reliable signal → app auto-closes
+        // the call card). Otherwise just update the live leg status.
+        await snap.docs[0].ref.set(ended ? { status: 'completed', legStatus: 'ended' } : { legStatus }, { merge: true });
+      }
     }
   } catch (e) { logger.error('leg status update failed', e); }
   res.status(200).json({ ok: true });

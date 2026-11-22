@@ -50,7 +50,7 @@ export function usePhoneBridge() {
           if (snap.empty) return;
           const d = snap.docs[0].data();
           const ls = d.legStatus;
-          if (d.status === 'completed' || d.status === 'failed' || ls === 'failed') { reset(); return; }
+          if (d.status === 'completed' || d.status === 'failed' || ls === 'failed' || ls === 'ended') { reset(); return; }
           if (ls === 'answered') {
             setCall((x) => (x ? { ...x, state: 'connected' } : x));
             if (!connectedAt.current) {
